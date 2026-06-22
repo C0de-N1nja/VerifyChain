@@ -83,4 +83,42 @@ contract GovernanceBoard {
 
         emit ProposalSubmitted(currentId, _institution, _tier);
     }
+
+    function approveProposal(uint256 _proposalId) public onlyBoardMember {
+        if(_proposalId >= proposalCount) revert GovernanceBoard__ProposalNotFound();
+        if(proposals[_proposalId].status != ProposalStatus.Pending) revert GovernanceBoard__ProposalAlreadyExecuted();
+        if(hasVoted[_proposalId][msg.sender] == true) revert GovernanceBoard__AlreadyVoted();
+
+        hasVoted[_proposalId][msg.sender] = true;
+        proposals[_proposalId].approvalCount += 1;
+
+        if(proposals[_proposalId].approvalCount >= 2){
+            issuerTier[proposals[_proposalId].institution] = proposals[_proposalId].tier;
+            proposals[_proposalId].status = ProposalStatus.Executed;
+            emit IssuerActivated(proposals[_proposalId].institution, uint8(proposals[_proposalId].tier));
+        }
+
+        emit ProposalApproved(_proposalId, msg.sender);
+    }
+
+    function revokeIssuer(address _institution) public onlyBoardMember {
+        issuerTier[_institution] = IssuerTier.None;
+        emit IssuerRevoked(_institution, msg.sender);
+    }
+
+    function isActivatedIssuer(address _issuer) public view returns(bool) {
+        return issuerTier[_issuer] != IssuerTier.None;
+    }
+
+    function getIssuerTier(address _issuer) public view returns(IssuerTier) {
+        return issuerTier[_issuer];
+    }
+
+    function isGovernanceMember(address _member) public view returns(bool) {
+        return isBoardMember[_member];
+    }
+
+    function getProposal(uint256 _proposalId) public view returns(Proposal memory) {
+        return proposals[_proposalId];
+    }    
 }
