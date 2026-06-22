@@ -49,4 +49,27 @@ contract GovernanceBoardTest is Test {
         assertTrue(board.isActivatedIssuer(institution));
         assertEq(uint8(board.getIssuerTier(institution)), 1);
     }
+
+    function test_RevertWhen_AlreadyVoted() public {
+        vm.startPrank(member1);
+        board.submitProposal(institution, 1);
+        
+        vm.expectRevert(GovernanceBoard.GovernanceBoard__AlreadyVoted.selector);
+        board.approveProposal(0);
+        vm.stopPrank();
+    }
+
+    function test_RevokeIssuer() public {
+        vm.prank(member1);
+        board.submitProposal(institution, 1);
+        vm.prank(member2);
+        board.approveProposal(0);
+        assertTrue(board.isActivatedIssuer(institution));
+
+        vm.prank(member1);
+        board.revokeIssuer(institution);
+
+        assertFalse(board.isActivatedIssuer(institution));
+        assertEq(uint8(board.getIssuerTier(institution)), 0);
+    }
 }

@@ -47,4 +47,74 @@ contract CredentialRegistryTest is Test {
         registry.revokeCredential(mockLeaf);
         assertTrue(registry.isLeafRevoked(mockLeaf));
     }
+
+    function _hashPair(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        return a < b
+            ? keccak256(abi.encodePacked(a, b))
+            : keccak256(abi.encodePacked(b, a));
+    }
+
+    function test_VerifyValidProofSucceeds() public {
+        bytes32 leaf0 = keccak256(abi.encodePacked("credential-0"));
+        bytes32 leaf1 = keccak256(abi.encodePacked("credential-1"));
+        bytes32 leaf2 = keccak256(abi.encodePacked("credential-2"));
+        bytes32 leaf3 = keccak256(abi.encodePacked("credential-3"));
+
+        bytes32 h01 = _hashPair(leaf0, leaf1);
+        bytes32 h23 = _hashPair(leaf2, leaf3);
+        bytes32 root = _hashPair(h01, h23);
+
+        vm.prank(issuer);
+        registry.registerBatch(root, 0);
+
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = h23;
+
+        bool result = registry.verify(root, leaf0, proof);
+        assertTrue(result);
+    }
+
+    function test_VerifyFailsForRevokedLeaf() public {
+        bytes32 leaf0 = keccak256(abi.encodePacked("credential-0"));
+        bytes32 leaf1 = keccak256(abi.encodePacked("credential-1"));
+        bytes32 leaf2 = keccak256(abi.encodePacked("credential-2"));
+        bytes32 leaf3 = keccak256(abi.encodePacked("credential-3"));
+
+        bytes32 h01 = _hashPair(leaf0, leaf1);
+        bytes32 h23 = _hashPair(leaf2, leaf3);
+        bytes32 root = _hashPair(h01, h23);
+
+        vm.prank(issuer);
+        registry.registerBatch(root, 0);
+
+        vm.prank(issuer);
+        registry.revokeCredential(leaf0);
+
+        bytes32[] memory proof = new bytes32[](2);
+        proof[0] = leaf1;
+        proof[1] = h23;
+
+        bool result = registry.verify(root, leaf0, proof);
+        assertFalse(result);
+    }
+
+    function test_RevertWhen_VerifyBatchNotFound() public {
+        bytes32[] memory emptyProof = new bytes32[](0);
+        vm.expectRevert(CredentialRegistry.CredentialRegistry__BatchNotFound.selector);
+        registry.verify(bytes32(uint256(0xdead)), mockLeaf, emptyProof);
+    }
+
+    function test_VerifyFailsForExpiredBatch() public {
+        bytes32 root = keccak256(abi.encodePacked("expiring-batch"));
+
+        vm.prank(issuer);
+        registry.registerBatch(root, block.timestamp + 1 days);
+
+        vm.warp(block.timestamp + 2 days);
+
+        bytes32[] memory emptyProof = new bytes32[](0);
+        bool result = registry.verify(root, root, emptyProof);
+        assertFalse(result);
+    }
 }
