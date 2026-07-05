@@ -1,0 +1,21 @@
+[
+  {"type":"constructor","inputs":[{"name":"_member1","type":"address","internalType":"address"},{"name":"_member2","type":"address","internalType":"address"},{"name":"_member3","type":"address","internalType":"address"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"approveProposal","inputs":[{"name":"_proposalId","type":"uint256","internalType":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"boardMembers","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"address","internalType":"address"}],"stateMutability":"view"},
+  {"type":"function","name":"getIssuerTier","inputs":[{"name":"_issuer","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"uint8","internalType":"enum GovernanceBoard.IssuerTier"}],"stateMutability":"view"},
+  {"type":"function","name":"getProposal","inputs":[{"name":"_proposalId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"tuple","internalType":"struct GovernanceBoard.Proposal","components":[{"name":"institution","type":"address","internalType":"address"},{"name":"tier","type":"uint8","internalType":"enum GovernanceBoard.IssuerTier"},{"name":"approvalCount","type":"uint8","internalType":"uint8"},{"name":"status","type":"uint8","internalType":"enum GovernanceBoard.ProposalStatus"},{"name":"proposedBy","type":"address","internalType":"address"}]}],"stateMutability":"view"},
+  {"type":"function","name":"isActivatedIssuer","inputs":[{"name":"_issuer","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"bool","internalType":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"isGovernanceMember","inputs":[{"name":"_member","type":"address","internalType":"address"}],"outputs":[{"name":"","type":"bool","internalType":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"revokeIssuer","inputs":[{"name":"_institution","type":"address","internalType":"address"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"submitProposal","inputs":[{"name":"_institution","type":"address","internalType":"address"},{"name":"_tier","type":"uint8","internalType":"uint8"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"event","name":"IssuerActivated","inputs":[{"name":"institution","type":"address","indexed":true,"internalType":"address"},{"name":"tier","type":"uint8","indexed":false,"internalType":"uint8"}],"anonymous":false},
+  {"type":"event","name":"IssuerRevoked","inputs":[{"name":"institution","type":"address","indexed":true,"internalType":"address"},{"name":"revokedBy","type":"address","indexed":true,"internalType":"address"}],"anonymous":false},
+  {"type":"event","name":"ProposalApproved","inputs":[{"name":"proposalId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"approvedBy","type":"address","indexed":true,"internalType":"address"}],"anonymous":false},
+  {"type":"event","name":"ProposalSubmitted","inputs":[{"name":"proposalId","type":"uint256","indexed":true,"internalType":"uint256"},{"name":"institution","type":"address","indexed":true,"internalType":"address"},{"name":"tier","type":"uint8","indexed":false,"internalType":"uint8"}],"anonymous":false},
+  {"type":"error","name":"GovernanceBoard__AlreadyActivated","inputs":[]},
+  {"type":"error","name":"GovernanceBoard__AlreadyVoted","inputs":[]},
+  {"type":"error","name":"GovernanceBoard__InvalidTier","inputs":[]},
+  {"type":"error","name":"GovernanceBoard__NotBoardMember","inputs":[]},
+  {"type":"error","name":"GovernanceBoard__ProposalAlreadyExecuted","inputs":[]},
+  {"type":"error","name":"GovernanceBoard__ProposalNotFound","inputs":[]}
+]
