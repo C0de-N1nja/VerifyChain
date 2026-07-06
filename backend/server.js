@@ -16,9 +16,9 @@ app.use(cors());
 app.use(express.json());
 
 // Issuer Portal routes
-app.post('/api/issuer/issue', async (req, res) => {
+app.post('/api/issuer/prepare-batch', (req, res) => {
 	try {
-		const { credentials, expiryTimestamp } = req.body;
+		const { credentials } = req.body;
 
 		if (!credentials || !Array.isArray(credentials) || credentials.length === 0) {
 			return res.status(400).json({ error: 'credentials array is required' });
@@ -26,17 +26,43 @@ app.post('/api/issuer/issue', async (req, res) => {
 
 		const { tree, leaves, root } = buildMerkleTree(credentials);
 
-		const tx = await credentialRegistry.registerBatch(root, expiryTimestamp || 0);
-		const receipt = await tx.wait();
+		const prepared = credentials.map((credential, i) => ({
+			credential,
+			leaf: '0x' + leaves[i].toString('hex'),
+			proof: tree.getHexProof(leaves[i])
+		}));
+
+		res.json({ merkleRoot: root, credentials: prepared });
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+});
+
+app.post('/api/issuer/confirm-batch', async (req, res) => {
+	try {
+		const { merkleRoot, credentials } = req.body;
+
+		if (!merkleRoot || !credentials || !Array.isArray(credentials)) {
+			return res.status(400).json({ error: 'merkleRoot and credentials are required' });
+		}
+
+		const batch = await credentialRegistry.getBatch(merkleRoot);
+
+		if (batch.issuer === '0x0000000000000000000000000000000000000000') {
+			return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
+		}
 
 		const results = [];
 
-		for (let i = 0; i < credentials.length; i++) {
-			const credential = credentials[i];
-			const leaf = '0x' + leaves[i].toString('hex');
-			const proof = tree.getHexProof(leaves[i]);
+		for (const item of credentials) {
+			const { credential, leaf, proof } = item;
 
-			const pdfBytes = await generateCertificate(credential, root, leaf, proof);
+			const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
+			if (!isValid) {
+				continue;
+			}
+
+			const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
 
 			if (credential.email) {
 				await sendCertificateEmail(credential.email, credential.studentName, pdfBytes);
@@ -45,11 +71,7 @@ app.post('/api/issuer/issue', async (req, res) => {
 			results.push({ credential, leaf, proof, emailed: !!credential.email });
 		}
 
-		res.json({
-			merkleRoot: root,
-			transactionHash: receipt.hash,
-			issued: results
-		});
+		res.json({ merkleRoot, issuer: batch.issuer, issued: results });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
