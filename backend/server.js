@@ -1,5 +1,23 @@
 require('dotenv').config();
 
+const mongoose = require('mongoose');
+
+const credentialSchema = new mongoose.Schema({
+	studentName: { type: String, required: true },
+	degreeTitle: { type: String, required: true },
+	email: { type: String, required: false },
+	issuerAddress: { type: String, required: true, lowercase: true, index: true },
+	merkleRoot: { type: String, required: true, lowercase: true, index: true },
+	leafHash: { type: String, required: true, unique: true, lowercase: true },
+	revoked: { type: Boolean, default: false },
+	revokedAt: { type: Date, default: null },
+	issuedAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+credentialSchema.index({ issuerAddress: 1, issuedAt: -1 });
+
+const Credential = mongoose.model('Credential', credentialSchema);
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -21,6 +39,19 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Database Connection
+async function connectDB() {
+	try {
+		await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/verifychain');
+		console.log('MongoDB connected');
+	} catch (err) {
+		console.error('MongoDB connection failed:', err.message);
+		process.exit(1);
+	}
+}
+connectDB();
+
+// Helper Function
 async function sendWithRetry(email, studentName, pdfBytes) {
 	try {
 		await sendCertificateEmail(email, studentName, pdfBytes);
@@ -136,6 +167,23 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 				continue;
 			}
 
+			try {
+				await Credential.create({
+					studentName: credential.studentName,
+					degreeTitle: credential.degreeTitle,
+					email: credential.email || undefined,
+					issuerAddress: batch.issuer,
+					merkleRoot: merkleRoot,
+					leafHash: leaf
+				});
+			} catch (dbErr) {
+				if (dbErr.code === 11000) {
+					console.warn(`Credential ${leaf} already indexed, skipping duplicate write.`);
+				} else {
+					console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
+				}
+			}
+
 			const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
 			let emailed = false;
 
@@ -148,7 +196,6 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 
 			results.push({ credential, leaf, proof, emailed });
 		}
-
 		let zipDownloadUrl = null;
 
 		if (failedEmails.length > 0) {
@@ -184,6 +231,27 @@ app.get('/api/issuer/download-zip/:filename', (req, res) => {
 	res.download(filePath);
 });
 
+app.get('/api/issuer/credentials', async (req, res) => {
+	try {
+		const { issuerAddress, merkleRoot } = req.query;
+
+		if (!issuerAddress && !merkleRoot) {
+			return res.status(400).json({ error: 'issuerAddress or merkleRoot query parameter is required' });
+		}
+
+		const filter = {};
+		if (issuerAddress) filter.issuerAddress = issuerAddress.toLowerCase();
+		if (merkleRoot) filter.merkleRoot = merkleRoot.toLowerCase();
+
+		const records = await Credential.find(filter)
+			.select('studentName degreeTitle leafHash merkleRoot revoked revokedAt issuedAt -_id')
+			.sort({ issuedAt: -1 });
+
+		res.json({ credentials: records });
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+});
 
 // Issuer Portal: History Routes
 app.get('/api/issuer/history', async (req, res) => {
