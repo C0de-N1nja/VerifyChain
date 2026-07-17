@@ -14,6 +14,7 @@ contract CredentialRegistry {
     error CredentialRegistry__InvalidProof();
     error CredentialRegistry__BatchNotFound();
     error CredentialRegistry__Expired();
+    error CredentialRegistry__NotBatchOwner();
 
     event BatchRegistered(bytes32 indexed merkleRoot, address indexed issuer, uint256 expiryTimestamp);
     event CredentialRevoked(bytes32 indexed leafHash, address indexed revokedBy);
@@ -49,8 +50,10 @@ contract CredentialRegistry {
         emit BatchRegistered(_merkleRoot, msg.sender, _expiryTimestamp);
     }
 
-    function revokeCredential(bytes32 _leafHash) public onlyActivatedIssuer {
+    function revokeCredential(bytes32 _leafHash, bytes32 _merkleRoot) public onlyActivatedIssuer {
         if (revokedLeaves[_leafHash]) revert CredentialRegistry__AlreadyRevoked();
+        if (batches[_merkleRoot].issuer == address(0)) revert CredentialRegistry__BatchNotFound();
+        if (batches[_merkleRoot].issuer != msg.sender) revert CredentialRegistry__NotBatchOwner();
 
         revokedLeaves[_leafHash] = true;
         emit CredentialRevoked(_leafHash, msg.sender);
