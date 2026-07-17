@@ -44,8 +44,17 @@ contract CredentialRegistryTest is Test {
 
     function test_RevokeCredential() public {
         vm.prank(issuer);
-        registry.revokeCredential(mockLeaf);
+        registry.registerBatch(mockRoot, 0);
+
+        vm.prank(issuer);
+        registry.revokeCredential(mockLeaf, mockRoot);
         assertTrue(registry.isLeafRevoked(mockLeaf));
+    }
+
+    function test_RevertWhen_RevokeBatchNotFound() public {
+        vm.prank(issuer);
+        vm.expectRevert(CredentialRegistry.CredentialRegistry__BatchNotFound.selector);
+        registry.revokeCredential(mockLeaf, bytes32(uint256(0xdead)));
     }
 
     function _hashPair(bytes32 a, bytes32 b) internal pure returns (bytes32) {
@@ -89,7 +98,7 @@ contract CredentialRegistryTest is Test {
         registry.registerBatch(root, 0);
 
         vm.prank(issuer);
-        registry.revokeCredential(leaf0);
+        registry.revokeCredential(leaf0, root);
 
         bytes32[] memory proof = new bytes32[](2);
         proof[0] = leaf1;
@@ -116,5 +125,20 @@ contract CredentialRegistryTest is Test {
         bytes32[] memory emptyProof = new bytes32[](0);
         bool result = registry.verify(root, root, emptyProof);
         assertFalse(result);
+    }
+
+    function test_RevertWhen_RevokeAsNonBatchOwner() public {
+        vm.prank(issuer);
+        registry.registerBatch(mockRoot, 0);
+
+        address otherIssuer = address(0x6);
+        vm.prank(member1);
+        board.submitProposal(otherIssuer, 1);
+        vm.prank(member2);
+        board.approveProposal(1);
+
+        vm.prank(otherIssuer);
+        vm.expectRevert(CredentialRegistry.CredentialRegistry__NotBatchOwner.selector);
+        registry.revokeCredential(mockLeaf, mockRoot);
     }
 }
