@@ -226,6 +226,35 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 	}
 });
 
+app.post('/api/issuer/confirm-revocation', async (req, res) => {
+	try {
+		const { leafHash, merkleRoot } = req.body;
+
+		if (!leafHash || !merkleRoot) {
+			return res.status(400).json({ error: 'leafHash and merkleRoot are required' });
+		}
+
+		const isRevoked = await credentialRegistry.isLeafRevoked(leafHash);
+
+		if (!isRevoked) {
+			return res.status(400).json({ error: 'Leaf is not revoked on-chain. Has the transaction confirmed yet?' });
+		}
+
+		try {
+			await Credential.findOneAndUpdate(
+				{ leafHash: leafHash.toLowerCase() },
+				{ revoked: true, revokedAt: new Date() }
+			);
+		} catch (dbErr) {
+			console.error(`Mongo update failed for revoked leaf ${leafHash}:`, dbErr.message);
+		}
+
+		res.json({ leafHash, merkleRoot, revoked: true });
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
+});
+
 app.get('/api/issuer/download-zip/:filename', (req, res) => {
 	const filePath = path.join(__dirname, 'temp-zips', req.params.filename);
 	res.download(filePath);
