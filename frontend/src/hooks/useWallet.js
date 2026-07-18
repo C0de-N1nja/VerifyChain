@@ -1,0 +1,179 @@
+import { useState, useEffect, useCallback } from "react";
+import { ethers } from "ethers";
+import { ZKSYNC_SEPOLIA_CHAIN_ID, ZKSYNC_SEPOLIA_PARAMS } from "../config/network";
+import { CONTRACTS } from "../config/contracts";
+
+export function useWallet() {
+  const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
+  const [address, setAddress] = useState("");
+  const [chainId, setChainId] = useState(null);
+  const [isMetaMaskInstalled, setIsMetaMaskInstalled] = useState(true);
+  const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
+  const [role, setRole] = useState({
+    isGovernanceMember: false,
+    isIssuer: false,
+    tier: 0,
+    isLoading: true,
+  });
+
+  // 1. Initialize provider and check if MetaMask is installed
+  useEffect(() => {
+    if (typeof window.ethereum !== "undefined") {
+      setIsMetaMaskInstalled(true);
+      const ethProvider = new ethers.BrowserProvider(window.ethereum);
+      setProvider(ethProvider);
+
+      const handleAccountsChanged = (accounts) => {
+        setAddress(accounts.length > 0 ? accounts[0] : "");
+        if (accounts.length === 0) setSigner(null);
+      };
+
+      const handleChainChanged = () => {
+        // MetaMask recommends reloading the page when the network changes
+        window.location.reload();
+      };
+
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+      window.ethereum.on("chainChanged", handleChainChanged);
+
+      // Check if already connected AND get current network/signer on initial load
+      ethProvider.listAccounts().then(async (accounts) => {
+        if (accounts.length > 0) {
+          setAddress(accounts[0].address);
+
+          // Fetch signer immediately so users can send transactions without clicking "Connect" again
+          const ethSigner = await ethProvider.getSigner();
+          setSigner(ethSigner);
+
+          // Fetch current chain ID on load
+          const network = await ethProvider.getNetwork();
+          const currentChainId = "0x" + network.chainId.toString(16);
+          setChainId(currentChainId);
+          setIsCorrectNetwork(currentChainId.toLowerCase() === ZKSYNC_SEPOLIA_CHAIN_ID.toLowerCase());
+        }
+      });
+
+      return () => {
+        window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+        window.ethereum.removeListener("chainChanged", handleChainChanged);
+      };
+    } else {
+      setIsMetaMaskInstalled(false);
+    }
+  }, []);
+
+  // 2. Derive role whenever address changes (UC-6/UC-7 derivation)
+  // 2. Derive role whenever address changes (UC-6/UC-7 derivation)
+  useEffect(() => {
+    const fetchRole = async () => {
+      if (!address || !provider) {
+        setRole({ isGovernanceMember: false, isIssuer: false, tier: 0, isLoading: false });
+        return;
+      }
+
+      setRole((prev) => ({ ...prev, isLoading: true }));
+      try {
+        const governanceContract = new ethers.Contract(
+          CONTRACTS.governanceBoard.address,
+          CONTRACTS.governanceBoard.abi,
+          provider
+        );
+
+        // Fetch independently so if getIssuerTier reverts, it doesn't break isGovernanceMember
+        let isGov = false;
+        let isIss = false;
+        let tier = 0;
+
+        try {
+          isGov = await governanceContract.isGovernanceMember(address);
+        } catch (e) { /* Ignore if it reverts */ }
+
+        try {
+          isIss = await governanceContract.isActivatedIssuer(address);
+        } catch (e) { /* Ignore if it reverts */ }
+
+        try {
+          tier = await governanceContract.getIssuerTier(address);
+          tier = Number(tier);
+        } catch (e) { /* Ignore if it reverts */ }
+
+        setRole({
+          isGovernanceMember: isGov,
+          isIssuer: isIss,
+          tier: tier,
+          isLoading: false,
+        });
+      } catch (error) {
+        console.error("Error fetching role:", error);
+        setRole({ isGovernanceMember: false, isIssuer: false, tier: 0, isLoading: false });
+      }
+    };
+
+    fetchRole();
+  }, [address, provider]);
+
+  // 3. Connect Wallet function
+  const connect = useCallback(async () => {
+    if (!window.ethereum) return;
+    try {
+      const ethProvider = new ethers.BrowserProvider(window.ethereum);
+      const accounts = await ethProvider.send("eth_requestAccounts", []);
+      const ethSigner = await ethProvider.getSigner();
+
+      setAddress(accounts[0]);
+      setSigner(ethSigner);
+
+      const network = await ethProvider.getNetwork();
+      const hexChainId = "0x" + network.chainId.toString(16);
+      setChainId(hexChainId);
+      setIsCorrectNetwork(hexChainId.toLowerCase() === ZKSYNC_SEPOLIA_CHAIN_ID.toLowerCase());
+    } catch (error) {
+      console.error("Connection error:", error);
+    }
+  }, []);
+
+  // 4. Switch/Add Network function (UC-7 two-step)
+  const switchNetwork = useCallback(async () => {
+    if (!window.ethereum) return;
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: ZKSYNC_SEPOLIA_CHAIN_ID }],
+      });
+    } catch (switchError) {
+      // This error code indicates that the chain has not been added to MetaMask.
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [ZKSYNC_SEPOLIA_PARAMS],
+          });
+        } catch (addError) {
+          console.error("Error adding network:", addError);
+        }
+      } else {
+        console.error("Error switching network:", switchError);
+      }
+    }
+  }, []);
+
+  // 5. Disconnect (Clears state, MetaMask doesn't have a true disconnect API)
+  const disconnect = useCallback(() => {
+    setAddress("");
+    setSigner(null);
+    setRole({ isGovernanceMember: false, isIssuer: false, tier: 0, isLoading: false });
+  }, []);
+
+  return {
+    provider,
+    signer,
+    address,
+    isMetaMaskInstalled,
+    isCorrectNetwork,
+    role,
+    connect,
+    disconnect,
+    switchNetwork,
+  };
+}
