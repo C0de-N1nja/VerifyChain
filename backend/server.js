@@ -336,7 +336,7 @@ app.get('/api/issuer/revocation-history', async (req, res) => {
 app.get('/api/verify/:credentialId', async (req, res) => {
 	try {
 		const { merkleRoot, leaf, proof } = req.query;
-		const proofArray = proof.split(',');
+		const proofArray = proof ? proof.split(',') : [];
 
 		const batch = await credentialRegistry.getBatch(merkleRoot);
 
