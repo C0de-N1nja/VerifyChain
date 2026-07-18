@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { API_URL } from "../config/contracts";
+import { formatAddress } from "../utils/formatAddress";
 
 export default function VerifierPortal() {
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState("idle"); // 'idle', 'verifying', 'valid', 'expired', 'revoked', 'not_found', 'error'
+  const [status, setStatus] = useState("idle");
   const [credentialId, setCredentialId] = useState("");
   const [verifyData, setVerifyData] = useState(null);
 
-  // Auto-verify if QR code params are present (UC-4)
   useEffect(() => {
     const merkleRoot = searchParams.get("merkleRoot");
     const leaf = searchParams.get("leaf");
@@ -24,13 +24,11 @@ export default function VerifierPortal() {
     setVerifyData(null);
 
     try {
-      // Safely parse the proof string into an array
       let proofArray = [];
       if (proofStr && proofStr.length > 0) {
         proofArray = proofStr.split(',');
       }
 
-      // Call backend API
       const response = await fetch(`${API_URL}/api/verify/${credentialId || "qr-scan"}?merkleRoot=${root}&leaf=${leaf}&proof=${proofArray.join(',')}`);
       const data = await response.json();
 
@@ -53,16 +51,13 @@ export default function VerifierPortal() {
   const handleManualSubmit = (e) => {
     e.preventDefault();
     if (credentialId) {
-      // For manual entry, we need the merkleRoot, leaf, and proof. 
-      // In a real scenario, the backend might look this up from Mongo using just the credentialId.
-      // For now, we simulate a 'Not Found' if no QR params are provided.
       setStatus("verifying");
       setTimeout(() => setStatus("not_found"), 1500);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-8 px-4">
+    <div className="max-w-md mx-auto mt-8 px-4 font-sans">
       {/* VERIFICATION STATES */}
       {status === "verifying" && (
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-8 flex flex-col items-center text-center">
@@ -80,31 +75,31 @@ export default function VerifierPortal() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-green-400">Valid Credential</h2>
-            <p className="text-slate-400 text-sm mt-1">Cryptographically verified on zkSync</p>
+            <h2 className="text-2xl font-bold text-green-400 tracking-tight">Valid Credential</h2>
+            <p className="text-slate-400 text-sm mt-1 font-mono">Cryptographically verified on zkSync</p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wider">Issued By</p>
-              <p className="text-lg text-white font-mono break-all">{verifyData.issuer}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Issued By</p>
+              <p className="text-lg text-white font-mono break-all">{formatAddress(verifyData.issuer)}</p>
             </div>
           </div>
 
           {/* Signature Element: Merkle Tree Visual */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <p className="text-xs text-slate-500 uppercase tracking-wider mb-4">Merkle Proof Path</p>
-            <div className="flex flex-col items-center gap-2">
+            <p className="text-xs text-slate-500 uppercase tracking-wider mb-6 text-center">Merkle Proof Path</p>
+            <div className="flex flex-col items-center gap-3">
               <div className="bg-teal-500/10 border border-teal-500/30 text-teal-400 text-xs font-mono px-4 py-2 rounded-lg">
                 Leaf (Credential Hash)
               </div>
-              <div className="w-px h-4 bg-slate-700"></div>
+              <div className="w-px h-6 bg-slate-700"></div>
               <div className="bg-slate-800 border border-slate-700 text-slate-400 text-xs font-mono px-4 py-2 rounded-lg">
                 Proof Node 1
               </div>
-              <div className="w-px h-4 bg-slate-700"></div>
+              <div className="w-px h-6 bg-slate-700"></div>
               <div className="bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-mono px-4 py-2 rounded-lg">
-                Merkle Root (Anchored)
+                Merkle Root (Anchored on-chain)
               </div>
             </div>
           </div>
@@ -152,9 +147,9 @@ export default function VerifierPortal() {
       {/* MANUAL ENTRY */}
       {status === "idle" && (
         <div className="text-center mt-10">
-          <h2 className="text-2xl font-bold text-white mb-2">Verify a Credential</h2>
+          <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Verify a Credential</h2>
           <p className="text-slate-400 mb-8">Scan a QR code from a certificate to verify it instantly.</p>
-
+          
           <div className="border-t border-slate-800 pt-8 mt-8">
             <p className="text-sm text-slate-500 mb-4">Have a credential ID? Enter it manually:</p>
             <form onSubmit={handleManualSubmit} className="flex gap-2">
@@ -165,7 +160,7 @@ export default function VerifierPortal() {
                 placeholder="0x... or UUID"
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500 font-mono text-sm"
               />
-              <button type="submit" className="bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold px-6 rounded-lg">
+              <button type="submit" className="bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold px-6 rounded-lg transition-colors">
                 Verify
               </button>
             </form>
