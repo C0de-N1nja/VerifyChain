@@ -19,6 +19,10 @@ export default function GovernanceDashboard() {
   const [proposals, setProposals] = useState([]);
   const [isLoadingProposals, setIsLoadingProposals] = useState(true);
 
+  // Active Issuers State
+  const [activeIssuers, setActiveIssuers] = useState([]);
+  const [isLoadingActive, setIsLoadingActive] = useState(false);
+
   // Submit Proposal State
   const [institutionAddress, setInstitutionAddress] = useState("");
   const [selectedTier, setSelectedTier] = useState(1);
@@ -35,8 +39,6 @@ export default function GovernanceDashboard() {
         for (let i = 1; i <= 10; i++) {
           try {
             const p = await governanceBoardRead.getProposal(i);
-            
-            // Safely convert BigInts to Numbers
             const formattedP = {
               id: i,
               institution: p.institution,
@@ -46,12 +48,11 @@ export default function GovernanceDashboard() {
               proposedBy: p.proposedBy
             };
 
-            // Only show if it exists and is Pending (status 0)
             if (formattedP.institution.toLowerCase() !== zeroAddress && formattedP.status === 0) {
               tempProposals.push(formattedP);
             }
           } catch (err) {
-            break; // Stop loop if ID doesn't exist
+            break;
           }
         }
         setProposals(tempProposals);
@@ -65,9 +66,44 @@ export default function GovernanceDashboard() {
     fetchProposals();
   }, [governanceBoardRead, status]);
 
-  // 2. Role Guard (Must come after hooks)
+  // 2. Fetch Active Issuers when tab is clicked
+  useEffect(() => {
+    const fetchActiveIssuers = async () => {
+      if (!governanceBoardRead || !provider) return;
+      setIsLoadingActive(true);
+      try {
+        // Query the IssuerActivated event
+        const filter = governanceBoardRead.filters.IssuerActivated();
+        const events = await governanceBoardRead.queryFilter(filter);
+        
+        // Map events and fetch block data for timestamps
+        const issuers = await Promise.all(
+          events.map(async (event) => {
+            const block = await provider.getBlock(event.blockNumber);
+            return {
+              address: event.args.institution,
+              tier: Number(event.args.tier),
+              activationDate: new Date(block.timestamp * 1000).toLocaleDateString(),
+              blockNumber: event.blockNumber
+            };
+          })
+        );
+        
+        setActiveIssuers(issuers);
+      } catch (err) {
+        console.error("Error fetching active issuers:", err);
+      } finally {
+        setIsLoadingActive(false);
+      }
+    };
+
+    if (activeTab === "active") {
+      fetchActiveIssuers();
+    }
+  }, [activeTab, governanceBoardRead, provider, status]);
+
+  // 3. Role Guard
   if (role.isLoading) return <div className="text-center text-slate-400 mt-20">Checking governance permissions...</div>;
-  
   if (!role.isGovernanceMember) {
     return (
       <div className="text-center text-slate-400 mt-20">
@@ -80,13 +116,11 @@ export default function GovernanceDashboard() {
   const handleSubmitProposal = async (e) => {
     e.preventDefault();
     if (!governanceBoard) return;
-    
     try {
       await execute(() => governanceBoard.submitProposal(institutionAddress, selectedTier));
       setToast({ message: "Proposal submitted successfully!", type: "success" });
       setInstitutionAddress("");
     } catch (err) {
-      // This will now show the exact smart contract error
       setToast({ message: parseError(err) || "Failed to submit proposal.", type: "error" });
     }
   };
@@ -97,7 +131,6 @@ export default function GovernanceDashboard() {
       await execute(() => governanceBoard.approveProposal(proposalId));
       setToast({ message: "Proposal approved! Issuer activated.", type: "success" });
     } catch (err) {
-      // This will now show the exact smart contract error
       setToast({ message: parseError(err) || "Failed to approve proposal.", type: "error" });
     }
   };
@@ -105,11 +138,7 @@ export default function GovernanceDashboard() {
   return (
     <div className="max-w-4xl mx-auto">
       <TransactionOverlay status={status} error={error} onClose={reset} />
-      <Toast 
-        message={toast.message} 
-        type={toast.type} 
-        onClose={() => setToast({ message: "", type: "info" })} 
-      />
+      <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: "", type: "info" })} />
 
       <div className="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
         <h1 className="text-2xl font-bold">Governance Dashboard</h1>
@@ -192,9 +221,40 @@ export default function GovernanceDashboard() {
         </div>
       )}
 
+      {/* ACTIVE ISSUERS TAB */}
       {activeTab === "active" && (
-        <div className="text-center text-slate-500 py-12">
-          Active issuers list will appear here.
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          {isLoadingActive ? (
+            <p className="text-slate-400 text-center py-12">Loading active issuers...</p>
+          ) : activeIssuers.length === 0 ? (
+            <div className="text-center text-slate-500 py-12">
+              <p>No active issuers yet.</p>
+              <p className="text-sm mt-2">Submit and approve a proposal to activate an issuer.</p>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-sm">
+                  <th className="p-4 font-medium">Institution Address</th>
+                  <th className="p-4 font-medium">Tier</th>
+                  <th className="p-4 font-medium">Activated On</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeIssuers.map((issuer, i) => (
+                  <tr key={i} className="border-b border-slate-800/50 last:border-0 hover:bg-slate-800/30 transition-colors">
+                    <td className="p-4 font-mono text-sm text-white">{formatAddress(issuer.address)}</td>
+                    <td className="p-4">
+                      <span className={`text-xs font-mono px-2 py-1 rounded ${issuer.tier === 1 ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400'}`}>
+                        Tier {issuer.tier}
+                      </span>
+                    </td>
+                    <td className="p-4 text-sm text-slate-300">{issuer.activationDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>
