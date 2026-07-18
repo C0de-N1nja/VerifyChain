@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useWallet } from "../hooks/useWallet";
 import { useContract } from "../hooks/useContract";
 import { useTransaction } from "../hooks/useTransaction";
@@ -16,6 +16,7 @@ export default function IssuerPortal() {
 
   const [activeTab, setActiveTab] = useState("issue");
   const [view, setView] = useState("form"); // 'form', 'review', 'success'
+  const [issuanceMode, setIssuanceMode] = useState("single"); // 'single' or 'bulk'
   
   // Form state
   const [studentName, setStudentName] = useState("");
@@ -33,10 +34,13 @@ export default function IssuerPortal() {
   const [history, setHistory] = useState([]);
   const [credentials, setCredentials] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [revokeTarget, setRevokeTarget] = useState(null); // { leafHash, merkleRoot, studentName }
+  const [revokeTarget, setRevokeTarget] = useState(null);
   const [confirmText, setConfirmText] = useState("");
 
-  // Fetch History & Credentials when tab changes
+  // CSV Upload state
+  const fileInputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+
   useEffect(() => {
     if (activeTab === "history" || activeTab === "revocation") {
       fetchDashboardData();
@@ -73,6 +77,7 @@ export default function IssuerPortal() {
     );
   }
 
+  // Handle Single Credential Preparation
   const handlePrepareBatch = async (e) => {
     e.preventDefault();
     setToast({ message: "Generating Merkle Root...", type: "info" });
@@ -90,7 +95,7 @@ export default function IssuerPortal() {
           studentName,
           degreeTitle,
           issuerAddress: address,
-          email: email || undefined, // Now included!
+          email: email || undefined,
           expiryTimestamp
         }]
       };
@@ -112,11 +117,54 @@ export default function IssuerPortal() {
     }
   };
 
+  // Handle Bulk CSV Preparation
+  const handleCsvUpload = async (file) => {
+    if (!file) return;
+    setToast({ message: "Processing CSV...", type: "info" });
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(`${API_URL}/api/issuer/prepare-batch-csv`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        // Backend returns array of errors in data.details if CSV validation fails
+        const errorMsg = data.details ? data.details.join(" | ") : data.error;
+        throw new Error(errorMsg || "CSV processing failed");
+      }
+
+      setBatchData(data);
+      setView("review");
+      setToast({ message: "", type: "info" });
+    } catch (err) {
+      setToast({ message: err.message, type: "error" });
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) handleCsvUpload(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleCsvUpload(file);
+  };
+
+  // Handle Blockchain Registration & PDF Delivery (Shared by Single & Bulk)
   const handleConfirmRegister = async () => {
     if (!credentialRegistry || !batchData) return;
 
     try {
-      const expiryTimestamp = batchData.credentials[0].credential.expiryTimestamp;
+      // Safely get expiryTimestamp (might be different per row in CSV, but contract takes one for the whole batch)
+      const expiryTimestamp = batchData.credentials[0]?.credential?.expiryTimestamp || 0;
       
       await execute(() => credentialRegistry.registerBatch(batchData.merkleRoot, expiryTimestamp));
       
@@ -136,7 +184,7 @@ export default function IssuerPortal() {
 
       setIssueResults(data);
       setView("success");
-      setToast({ message: "Credential successfully issued!", type: "success" });
+      setToast({ message: "Credentials successfully issued!", type: "success" });
     } catch (err) {
       setToast({ message: parseError(err) || "Failed to register on blockchain.", type: "error" });
     }
@@ -156,7 +204,7 @@ export default function IssuerPortal() {
       setToast({ message: "Credential revoked successfully.", type: "success" });
       setRevokeTarget(null);
       setConfirmText("");
-      fetchDashboardData(); // Refresh list
+      fetchDashboardData();
     } catch (err) {
       setToast({ message: parseError(err) || "Failed to revoke.", type: "error" });
     }
@@ -191,39 +239,67 @@ export default function IssuerPortal() {
       {activeTab === "issue" && (
         <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
           {view === "form" && (
-            <form onSubmit={handlePrepareBatch} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Student Name</label>
-                  <input type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Student Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="optional" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
-                </div>
+            <div className="space-y-6">
+              {/* Mode Toggle */}
+              <div className="flex gap-2 bg-slate-800 p-1 rounded-lg w-fit">
+                <button onClick={() => setIssuanceMode("single")} className={`px-4 py-2 text-sm rounded-md ${issuanceMode === "single" ? "bg-teal-500 text-slate-900" : "text-slate-400"}`}>Single</button>
+                <button onClick={() => setIssuanceMode("bulk")} className={`px-4 py-2 text-sm rounded-md ${issuanceMode === "bulk" ? "bg-teal-500 text-slate-900" : "text-slate-400"}`}>Bulk (CSV)</button>
               </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Degree Title</label>
-                <input type="text" value={degreeTitle} onChange={(e) => setDegreeTitle(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Institution</label>
-                <input type="text" value={institution} onChange={(e) => setInstitution(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Issue Date</label>
-                  <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
-                </div>
-                {role.tier === 2 && (
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Expiry Date</label>
-                    <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+
+              {issuanceMode === "single" ? (
+                <form onSubmit={handlePrepareBatch} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Student Name</label>
+                      <input type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Student Email</label>
+                      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="optional" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+                    </div>
                   </div>
-                )}
-              </div>
-              <button type="submit" className="bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold py-3 px-6 rounded-lg w-full transition-colors">Review & Register</button>
-            </form>
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Degree Title</label>
+                    <input type="text" value={degreeTitle} onChange={(e) => setDegreeTitle(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Institution</label>
+                    <input type="text" value={institution} onChange={(e) => setInstitution(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Issue Date</label>
+                      <input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+                    </div>
+                    {role.tier === 2 && (
+                      <div>
+                        <label className="block text-sm text-slate-400 mb-1">Expiry Date</label>
+                        <input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500" />
+                      </div>
+                    )}
+                  </div>
+                  <button type="submit" className="bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold py-3 px-6 rounded-lg w-full transition-colors">Review & Register</button>
+                </form>
+              ) : (
+                <div className="space-y-6">
+                  {/* Download Sample CSV Link (UC-19) */}
+                  <a href={`${API_URL}/api/issuer/csv-template`} className="text-teal-400 hover:underline text-sm block">Download Sample CSV</a>
+                  
+                  {/* Dropzone */}
+                  <div 
+                    onClick={() => fileInputRef.current.click()}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${isDragging ? "border-teal-500 bg-slate-800/50" : "border-slate-700 hover:border-slate-500"}`}
+                  >
+                    <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                    <p className="text-slate-400 mb-2">Drag and drop a CSV file here, or click to browse</p>
+                    <p className="text-slate-500 text-xs">Max 50 credentials per batch</p>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {view === "review" && batchData && (
@@ -233,8 +309,7 @@ export default function IssuerPortal() {
                 <p className="text-slate-400 text-sm">Please review the details before sending to the blockchain.</p>
               </div>
               <div className="bg-slate-800 p-4 rounded-lg space-y-2">
-                <div className="flex justify-between"><span className="text-slate-400">Student:</span><span className="text-white">{studentName}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Degree:</span><span className="text-white">{degreeTitle}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Credentials in Batch:</span><span className="text-white">{batchData.credentials.length}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Merkle Root:</span><span className="text-teal-400 font-mono text-xs">{formatAddress(batchData.merkleRoot)}</span></div>
               </div>
               <button onClick={handleConfirmRegister} disabled={status === "pending"} className="bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-slate-900 font-bold py-3 px-6 rounded-lg w-full transition-colors">
@@ -249,12 +324,12 @@ export default function IssuerPortal() {
                 <svg className="w-8 h-8 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
               </div>
               <h3 className="text-xl font-bold text-white">Issuance Complete</h3>
-              <p className="text-slate-400">The credential has been anchored on zkSync.</p>
+              <p className="text-slate-400">{issueResults.issued.length} credential(s) have been anchored on zkSync.</p>
               
-              <div className="bg-slate-800 p-4 rounded-lg text-left mt-6">
-                <p className="text-sm text-slate-400">Delivery Status:</p>
+              <div className="bg-slate-800 p-4 rounded-lg text-left mt-6 max-h-60 overflow-y-auto">
+                <p className="text-sm text-slate-400 mb-2">Delivery Status:</p>
                 {issueResults.issued.map((item, i) => (
-                  <div key={i} className="flex justify-between mt-2 text-sm">
+                  <div key={i} className="flex justify-between mt-2 text-sm border-b border-slate-700 pb-2 last:border-0">
                     <span className="text-white">{item.credential.studentName}</span>
                     <span className={item.emailed ? "text-teal-400" : "text-amber-400"}>
                       {item.emailed ? "✅ Email Sent" : "⚠️ Email Failed"}
@@ -267,7 +342,7 @@ export default function IssuerPortal() {
                 <a href={`${API_URL}${issueResults.zipDownloadUrl}`} className="text-indigo-400 hover:underline block mt-4">Download Failed PDFs (ZIP)</a>
               )}
 
-              <button onClick={resetForm} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg w-full mt-6">Issue Another Credential</button>
+              <button onClick={resetForm} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg w-full mt-6">Issue More Credentials</button>
             </div>
           )}
         </div>
