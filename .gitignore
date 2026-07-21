@@ -1,4 +1,26 @@
-# Foundry
+# Environment variables (Ignores all .env files in root, backend, contracts, and frontend)
+.env
+.env.*
+*.env
+
+# Node.js dependencies
+node_modules/
+**/node_modules/
+
+# Backend temporary files
+temp-zips/
+**/temp-zips/
+
+# Frontend build outputs
+dist/
+build/
+
+# Foundry & zkSync compilation artifacts
 contracts/lib/
 contracts/out/
 contracts/cache/
+contracts/zkout/
+
+# System files
+.DS_Store
+Thumbs.db
