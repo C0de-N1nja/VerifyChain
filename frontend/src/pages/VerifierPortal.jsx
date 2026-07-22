@@ -1,21 +1,26 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { API_URL } from "../config/contracts";
+import { API_URL, CONTRACTS } from "../config/contracts";
 import { formatAddress } from "../utils/formatAddress";
 
 export default function VerifierPortal() {
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState("idle");
-  const [credentialId, setCredentialId] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | verifying | valid | expired | revoked | not_found | error
   const [verifyData, setVerifyData] = useState(null);
+  const [manualRoot, setManualRoot] = useState("");
+  const [manualLeaf, setManualLeaf] = useState("");
 
   useEffect(() => {
-    const merkleRoot = searchParams.get("merkleRoot");
-    const leaf = searchParams.get("leaf");
-    const proof = searchParams.get("proof");
+    try {
+      const merkleRoot = searchParams.get("merkleRoot");
+      const leaf = searchParams.get("leaf");
+      const proof = searchParams.get("proof") || "";
 
-    if (merkleRoot && leaf) {
-      verifyCredential(merkleRoot, leaf, proof);
+      if (merkleRoot && leaf) {
+        verifyCredential(merkleRoot, leaf, proof);
+      }
+    } catch (err) {
+      console.error("URL Parsing Error:", err);
     }
   }, [searchParams]);
 
@@ -24,147 +29,272 @@ export default function VerifierPortal() {
     setVerifyData(null);
 
     try {
-      let proofArray = [];
-      if (proofStr && proofStr.length > 0) {
-        proofArray = proofStr.split(',');
+      let proofParam = "";
+      if (proofStr && typeof proofStr === "string" && proofStr.trim().length > 0) {
+        proofParam = proofStr;
       }
 
-      const response = await fetch(`${API_URL}/api/verify/${credentialId || "qr-scan"}?merkleRoot=${root}&leaf=${leaf}&proof=${proofArray.join(',')}`);
+      const response = await fetch(
+        `${API_URL}/api/verify/qr-scan?merkleRoot=${root}&leaf=${leaf}&proof=${proofParam}`
+      );
+
+      if (!response.ok) {
+        setStatus("not_found");
+        return;
+      }
+
       const data = await response.json();
 
       if (data.status === "Valid") {
-        setVerifyData({ issuer: data.issuer });
+        setVerifyData({
+          issuer: data.issuer || "0x0000000000000000000000000000000000000000",
+          merkleRoot: root,
+          leaf: leaf,
+          proofCount: proofParam ? proofParam.split(",").length : 0,
+        });
         setStatus("valid");
       } else if (data.status === "Expired") {
+        setVerifyData({ expiredOn: data.expiredOn || "" });
         setStatus("expired");
       } else if (data.status === "Revoked") {
+        setVerifyData({
+          merkleRoot: root,
+          leaf: leaf,
+        });
         setStatus("revoked");
       } else {
         setStatus("not_found");
       }
     } catch (error) {
-      console.error("Verification failed:", error);
+      console.error("Verification Error:", error);
       setStatus("error");
     }
   };
 
   const handleManualSubmit = (e) => {
     e.preventDefault();
-    if (credentialId) {
-      setStatus("verifying");
-      setTimeout(() => setStatus("not_found"), 1500);
+    if (manualRoot && manualLeaf) {
+      verifyCredential(manualRoot.trim(), manualLeaf.trim(), "");
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-8 px-4 font-sans">
-      {/* VERIFICATION STATES */}
+    <div className="max-w-3xl mx-auto py-6 space-y-8 font-sans">
+      {/* HEADER */}
+      <div className="text-center space-y-2">
+        <span className="text-xs font-mono font-bold tracking-wider uppercase text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+          Public Verifier Portal
+        </span>
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          Credential Verification Engine
+        </h1>
+        <p className="text-slate-500 text-xs max-w-md mx-auto">
+          Automated cryptographic proof validation against zkSync Sepolia smart contracts.
+        </p>
+      </div>
+
+      {/* VERIFYING LOADING STATE */}
       {status === "verifying" && (
-        <div className="bg-slate-900 border border-slate-700 rounded-xl p-8 flex flex-col items-center text-center">
-          <div className="w-12 h-12 border-4 border-slate-700 border-t-teal-500 rounded-full animate-spin mb-6"></div>
-          <h3 className="text-xl font-bold text-white mb-2">Verifying Credential</h3>
-          <p className="text-slate-400">Checking cryptographic proof against zkSync...</p>
+        <div className="modern-glass-card p-12 rounded-3xl text-center space-y-4 border border-slate-200 shadow-xl">
+          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto"></div>
+          <h3 className="text-lg font-bold text-slate-900">Verifying Cryptographic Proof</h3>
+          <p className="text-slate-500 text-xs font-mono">Querying zkSync Sepolia Layer 2...</p>
         </div>
       )}
 
+      {/* VALID CREDENTIAL RESULT STATE */}
       {status === "valid" && verifyData && (
-        <div className="space-y-4 animate-fade-in">
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6 text-center">
-            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-              </svg>
+        <div className="space-y-6">
+          {/* VALID SEAL BANNER */}
+          <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-6 text-center space-y-2 shadow-sm">
+            <div className="w-12 h-12 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-md font-bold text-xl">
+              ✓
             </div>
-            <h2 className="text-2xl font-bold text-green-400 tracking-tight">Valid Credential</h2>
-            <p className="text-slate-400 text-sm mt-1 font-mono">Cryptographically verified on zkSync</p>
+            <h2 className="text-2xl font-extrabold text-emerald-900 tracking-tight">
+              Cryptographically Authentic Credential
+            </h2>
+            <p className="text-emerald-700 text-xs font-mono font-medium">
+              Verified on-chain via zkSync Sepolia smart contract
+            </p>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Issued By</p>
-              <p className="text-lg text-white font-mono break-all">{formatAddress(verifyData.issuer)}</p>
+          {/* ISSUER DETAILS */}
+          <div className="modern-glass-card p-6 rounded-2xl border border-slate-200 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Issuing Authority</h3>
+            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <span className="text-xs font-semibold text-slate-700">Whitelisted Issuer Address</span>
+              <span className="font-mono text-xs font-bold text-indigo-600 bg-white px-3 py-1 rounded border border-slate-200">
+                {formatAddress(verifyData.issuer)}
+              </span>
             </div>
           </div>
 
-          {/* Signature Element: Merkle Tree Visual */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-            <p className="text-xs text-slate-500 uppercase tracking-wider mb-6 text-center">Merkle Proof Path</p>
-            <div className="flex flex-col items-center gap-3">
-              <div className="bg-teal-500/10 border border-teal-500/30 text-teal-400 text-xs font-mono px-4 py-2 rounded-lg">
-                Leaf (Credential Hash)
+          {/* VISUAL MERKLE TREE DIAGRAM */}
+          <div className="modern-glass-card p-8 rounded-3xl border border-slate-200/90 space-y-6 shadow-xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Cryptographic Merkle Tree Structure</h3>
+                <p className="text-[11px] text-slate-500">Visual proof path reconstruction to the on-chain root.</p>
               </div>
-              <div className="w-px h-6 bg-slate-700"></div>
-              <div className="bg-slate-800 border border-slate-700 text-slate-400 text-xs font-mono px-4 py-2 rounded-lg">
-                Proof Node 1
+              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 font-bold">
+                Proof Verified
+              </span>
+            </div>
+
+            {/* TREE STRUCTURE DIAGRAM */}
+            <div className="flex flex-col items-center gap-4 py-4 font-mono text-xs">
+              <div className="bg-indigo-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-indigo-500/20 text-center font-bold">
+                <p className="text-[9px] font-sans uppercase tracking-wider text-indigo-200 font-bold">On-Chain Merkle Root</p>
+                <p className="text-sm mt-0.5">{formatAddress(verifyData.merkleRoot)}</p>
               </div>
-              <div className="w-px h-6 bg-slate-700"></div>
-              <div className="bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-mono px-4 py-2 rounded-lg">
-                Merkle Root (Anchored on-chain)
+
+              <div className="w-0.5 h-6 bg-indigo-300"></div>
+
+              <div className="bg-emerald-50 border-2 border-emerald-500/60 p-4 rounded-2xl text-center max-w-sm w-full space-y-1 shadow-sm">
+                <div className="flex justify-between items-center border-b border-emerald-200/60 pb-1 mb-1">
+                  <span className="text-[9px] font-sans uppercase text-emerald-800 font-bold">Credential Leaf Node</span>
+                  <span className="text-[9px] font-sans bg-emerald-600 text-white font-bold px-2 py-0.5 rounded-full">Scanned Record</span>
+                </div>
+                <p className="text-emerald-900 font-bold text-xs">{formatAddress(verifyData.leaf)}</p>
               </div>
             </div>
           </div>
+
+          {/* LIVE ON-CHAIN AUDIT RECEIPT CARD INSIDE APP */}
+          <div className="bg-slate-900 text-white p-6 rounded-2xl space-y-3 font-mono text-xs shadow-xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <span className="text-teal-400 font-bold uppercase text-[10px] tracking-wider font-sans">On-Chain Cryptographic Receipt</span>
+              <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-sans text-[10px]">Confirmed on Layer 2</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Network:</span>
+              <span className="text-slate-200">zkSync Sepolia (Chain ID 300)</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Registry Contract:</span>
+              <span className="text-slate-200">{formatAddress(CONTRACTS.credentialRegistry.address)}</span>
+            </div>
+            <div className="flex justify-between text-slate-400">
+              <span>Merkle Root:</span>
+              <span className="text-teal-400 font-bold">{formatAddress(verifyData.merkleRoot)}</span>
+            </div>
+            <div className="pt-2">
+              <a
+                href={`https://sepolia.explorer.zksync.io/address/${CONTRACTS.credentialRegistry.address}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block bg-teal-500 hover:bg-teal-400 text-slate-950 font-sans font-bold px-4 py-2 rounded-lg text-xs transition-colors"
+              >
+                View Contract on zkSync Explorer ↗
+              </a>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setStatus("idle")}
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl text-xs transition-colors border border-slate-300"
+          >
+            Verify Another Credential
+          </button>
         </div>
       )}
 
-      {status === "expired" && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-8 text-center">
-          <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-10 h-10 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-amber-400">Credential Expired</h2>
-          <p className="text-slate-400 mt-2">This credential was once genuine but has now expired.</p>
-        </div>
-      )}
-
+      {/* REVOKED RESULT STATE WITH ON-CHAIN PROOF */}
       {status === "revoked" && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-8 text-center">
-          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-            </svg>
+        <div className="space-y-6">
+          <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-8 text-center space-y-3 shadow-sm">
+            <div className="w-12 h-12 bg-rose-600 text-white rounded-full flex items-center justify-center mx-auto shadow-md font-bold text-xl">
+              ✕
+            </div>
+            <h2 className="text-2xl font-extrabold text-rose-900 tracking-tight">Credential Revoked</h2>
+            <p className="text-rose-800 text-xs leading-relaxed max-w-md mx-auto">
+              This credential has been permanently cancelled on-chain by the issuing institution.
+            </p>
           </div>
-          <h2 className="text-2xl font-bold text-red-400">Credential Revoked</h2>
-          <p className="text-slate-400 mt-2">This credential has been cancelled by the issuing institution.</p>
+
+          {/* LIVE ON-CHAIN REVOCATION RECEIPT INSIDE APP */}
+          {verifyData && (
+            <div className="bg-slate-900 text-white p-6 rounded-2xl space-y-3 font-mono text-xs shadow-xl">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                <span className="text-rose-400 font-bold uppercase text-[10px] tracking-wider font-sans">On-Chain Revocation Proof</span>
+                <span className="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded font-sans text-[10px]">revokedLeaves[leaf] == true</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Revoked Leaf Hash:</span>
+                <span className="text-rose-400 font-bold">{formatAddress(verifyData.leaf)}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Batch Merkle Root:</span>
+                <span className="text-slate-200">{formatAddress(verifyData.merkleRoot)}</span>
+              </div>
+              <div className="pt-2">
+                <a
+                  href={`https://sepolia.explorer.zksync.io/address/${CONTRACTS.credentialRegistry.address}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block bg-rose-600 hover:bg-rose-500 text-white font-sans font-bold px-4 py-2 rounded-lg text-xs transition-colors"
+                >
+                  Verify Revocation Event on Explorer ↗
+                </a>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => setStatus("idle")}
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl text-xs border border-slate-300 transition-colors"
+          >
+            Reset Verifier
+          </button>
         </div>
       )}
 
-      {status === "not_found" && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-8 text-center">
-          <h2 className="text-2xl font-bold text-red-400">Not Found</h2>
-          <p className="text-slate-400 mt-2">This certificate does not match any record on the blockchain.</p>
+      {/* EXPIRED / NOT FOUND / ERROR */}
+      {(status === "expired" || status === "not_found" || status === "error") && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-8 text-center space-y-3 shadow-sm">
+          <h2 className="text-2xl font-extrabold text-rose-900 tracking-tight">
+            {status === "expired" ? "Credential Expired" : "Verification Failed"}
+          </h2>
+          <p className="text-rose-800 text-xs">
+            {status === "expired"
+              ? "The expiration timestamp for this credential has passed."
+              : "No matching on-chain record found for this credential."}
+          </p>
+          <button
+            onClick={() => setStatus("idle")}
+            className="mt-4 bg-rose-100 hover:bg-rose-200 text-rose-900 font-bold px-6 py-2 rounded-xl text-xs border border-rose-300"
+          >
+            Reset Verifier
+          </button>
         </div>
       )}
 
-      {status === "error" && (
-        <div className="bg-slate-700 border border-slate-600 rounded-xl p-8 text-center">
-          <h2 className="text-2xl font-bold text-white">RPC Unavailable</h2>
-          <p className="text-slate-300 mt-2">Verification is temporarily unavailable, please try again in a few minutes.</p>
-        </div>
-      )}
-
-      {/* MANUAL ENTRY */}
+      {/* MANUAL LOOKUP */}
       {status === "idle" && (
-        <div className="text-center mt-10">
-          <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Verify a Credential</h2>
-          <p className="text-slate-400 mb-8">Scan a QR code from a certificate to verify it instantly.</p>
-          
-          <div className="border-t border-slate-800 pt-8 mt-8">
-            <p className="text-sm text-slate-500 mb-4">Have a credential ID? Enter it manually:</p>
-            <form onSubmit={handleManualSubmit} className="flex gap-2">
-              <input
-                type="text"
-                value={credentialId}
-                onChange={(e) => setCredentialId(e.target.value)}
-                placeholder="0x... or UUID"
-                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-teal-500 font-mono text-sm"
-              />
-              <button type="submit" className="bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold px-6 rounded-lg transition-colors">
-                Verify
-              </button>
-            </form>
-          </div>
+        <div className="modern-glass-card p-8 rounded-3xl space-y-6 border border-slate-200">
+          <h3 className="text-base font-bold text-slate-900">Manual Credential Verification</h3>
+          <form onSubmit={handleManualSubmit} className="space-y-4">
+            <input
+              type="text"
+              value={manualRoot}
+              onChange={(e) => setManualRoot(e.target.value)}
+              placeholder="Merkle Root (0x...)"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-900"
+            />
+            <input
+              type="text"
+              value={manualLeaf}
+              onChange={(e) => setManualLeaf(e.target.value)}
+              placeholder="Leaf Hash (0x...)"
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-900"
+            />
+            <button
+              type="submit"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-xs shadow-md"
+            >
+              Verify On-Chain
+            </button>
+          </form>
         </div>
       )}
     </div>
