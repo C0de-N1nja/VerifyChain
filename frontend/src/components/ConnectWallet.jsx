@@ -9,21 +9,25 @@ export default function ConnectWallet() {
 
   if (address) {
     return (
-      <div className="flex items-center gap-4 bg-slate-800/50 border border-slate-700 rounded-lg p-2 pr-4">
+      <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-1.5 pr-4 shadow-sm text-xs">
         {role.isIssuer && (
-          <span className="text-xs font-mono bg-teal-500/10 text-teal-400 px-2 py-1 rounded">
+          <span className="font-mono font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200">
             Tier {role.tier}
           </span>
         )}
+
         {role.isGovernanceMember && (
-          <span className="text-xs font-mono bg-indigo-500/10 text-indigo-400 px-2 py-1 rounded">
+          <span className="font-mono font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg border border-indigo-200">
             Board
           </span>
         )}
-        <span className="font-mono text-sm text-slate-200">{formatAddress(address)}</span>
+
+        <span className="font-mono font-bold text-slate-800 pl-1">{formatAddress(address)}</span>
+
         <button 
           onClick={disconnect}
-          className="text-xs text-slate-400 hover:text-red-400 transition-colors"
+          className="text-slate-400 hover:text-rose-600 transition-colors font-medium ml-1"
+          title="Disconnect Wallet"
         >
           Disconnect
         </button>
@@ -34,7 +38,7 @@ export default function ConnectWallet() {
   return (
     <button
       onClick={connect}
-      className="bg-teal-500 hover:bg-teal-600 text-slate-900 font-bold py-2 px-6 rounded-lg transition-colors"
+      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-5 rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20"
     >
       Connect Wallet
     </button>
