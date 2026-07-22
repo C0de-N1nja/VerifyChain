@@ -5,18 +5,17 @@ const credentialRegistryAbi = require('./abis/CredentialRegistry.json');
 const { ethers } = require('ethers');
 
 const provider = new ethers.JsonRpcProvider(process.env.ZKSYNC_SEPOLIA_RPC);
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 const governanceBoard = new ethers.Contract(
 	process.env.GOVERNANCE_BOARD_ADDRESS,
 	governanceBoardAbi,
-	wallet
+	provider
 );
 
 const credentialRegistry = new ethers.Contract(
 	process.env.CREDENTIAL_REGISTRY_ADDRESS,
 	credentialRegistryAbi,
-	wallet
+	provider
 );
 
-module.exports = { provider, wallet, governanceBoard, credentialRegistry };
+module.exports = { provider, governanceBoard, credentialRegistry };
