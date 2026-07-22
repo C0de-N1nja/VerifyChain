@@ -17,40 +17,52 @@ export function useWallet() {
     isLoading: true,
   });
 
-  // 1. Initialize provider and check if MetaMask is installed
+  // 1. Initialize provider and handle account/chain changes
   useEffect(() => {
     if (typeof window.ethereum !== "undefined") {
       setIsMetaMaskInstalled(true);
       const ethProvider = new ethers.BrowserProvider(window.ethereum);
       setProvider(ethProvider);
 
-      const handleAccountsChanged = (accounts) => {
-        setAddress(accounts.length > 0 ? accounts[0] : "");
-        if (accounts.length === 0) setSigner(null);
+      const handleAccountsChanged = async (accounts) => {
+        if (accounts.length > 0) {
+          const freshAddress = accounts[0];
+          setAddress(freshAddress);
+          try {
+            // ALWAYS fetch a fresh signer matching the newly selected account
+            const freshSigner = await ethProvider.getSigner(freshAddress);
+            setSigner(freshSigner);
+          } catch (e) {
+            console.error("Error fetching fresh signer:", e);
+          }
+        } else {
+          setAddress("");
+          setSigner(null);
+        }
       };
 
       const handleChainChanged = () => {
-        // MetaMask recommends reloading the page when the network changes
         window.location.reload();
       };
 
       window.ethereum.on("accountsChanged", handleAccountsChanged);
       window.ethereum.on("chainChanged", handleChainChanged);
 
-      // Check if already connected AND get current network/signer on initial load
+      // Check initial connection
       ethProvider.listAccounts().then(async (accounts) => {
         if (accounts.length > 0) {
-          setAddress(accounts[0].address);
+          const initialAddress = accounts[0].address;
+          setAddress(initialAddress);
 
-          // Fetch signer immediately so users can send transactions without clicking "Connect" again
-          const ethSigner = await ethProvider.getSigner();
-          setSigner(ethSigner);
+          const initialSigner = await ethProvider.getSigner(initialAddress);
+          setSigner(initialSigner);
 
-          // Fetch current chain ID on load
           const network = await ethProvider.getNetwork();
           const currentChainId = "0x" + network.chainId.toString(16);
           setChainId(currentChainId);
-          setIsCorrectNetwork(currentChainId.toLowerCase() === ZKSYNC_SEPOLIA_CHAIN_ID.toLowerCase());
+          setIsCorrectNetwork(
+            currentChainId.toLowerCase() === ZKSYNC_SEPOLIA_CHAIN_ID.toLowerCase()
+          );
         }
       });
 
@@ -63,8 +75,7 @@ export function useWallet() {
     }
   }, []);
 
-  // 2. Derive role whenever address changes (UC-6/UC-7 derivation)
-  // 2. Derive role whenever address changes (UC-6/UC-7 derivation)
+  // 2. Fetch role whenever address or provider changes
   useEffect(() => {
     const fetchRole = async () => {
       if (!address || !provider) {
@@ -80,23 +91,22 @@ export function useWallet() {
           provider
         );
 
-        // Fetch independently so if getIssuerTier reverts, it doesn't break isGovernanceMember
         let isGov = false;
         let isIss = false;
         let tier = 0;
 
         try {
           isGov = await governanceContract.isGovernanceMember(address);
-        } catch (e) { /* Ignore if it reverts */ }
+        } catch (e) { /* ignore */ }
 
         try {
           isIss = await governanceContract.isActivatedIssuer(address);
-        } catch (e) { /* Ignore if it reverts */ }
+        } catch (e) { /* ignore */ }
 
         try {
           tier = await governanceContract.getIssuerTier(address);
           tier = Number(tier);
-        } catch (e) { /* Ignore if it reverts */ }
+        } catch (e) { /* ignore */ }
 
         setRole({
           isGovernanceMember: isGov,
@@ -113,13 +123,13 @@ export function useWallet() {
     fetchRole();
   }, [address, provider]);
 
-  // 3. Connect Wallet function
+  // 3. Connect Wallet
   const connect = useCallback(async () => {
     if (!window.ethereum) return;
     try {
       const ethProvider = new ethers.BrowserProvider(window.ethereum);
       const accounts = await ethProvider.send("eth_requestAccounts", []);
-      const ethSigner = await ethProvider.getSigner();
+      const ethSigner = await ethProvider.getSigner(accounts[0]);
 
       setAddress(accounts[0]);
       setSigner(ethSigner);
@@ -127,13 +137,15 @@ export function useWallet() {
       const network = await ethProvider.getNetwork();
       const hexChainId = "0x" + network.chainId.toString(16);
       setChainId(hexChainId);
-      setIsCorrectNetwork(hexChainId.toLowerCase() === ZKSYNC_SEPOLIA_CHAIN_ID.toLowerCase());
+      setIsCorrectNetwork(
+        hexChainId.toLowerCase() === ZKSYNC_SEPOLIA_CHAIN_ID.toLowerCase()
+      );
     } catch (error) {
       console.error("Connection error:", error);
     }
   }, []);
 
-  // 4. Switch/Add Network function (UC-7 two-step)
+  // 4. Switch Network
   const switchNetwork = useCallback(async () => {
     if (!window.ethereum) return;
     try {
@@ -142,7 +154,6 @@ export function useWallet() {
         params: [{ chainId: ZKSYNC_SEPOLIA_CHAIN_ID }],
       });
     } catch (switchError) {
-      // This error code indicates that the chain has not been added to MetaMask.
       if (switchError.code === 4902) {
         try {
           await window.ethereum.request({
@@ -158,7 +169,7 @@ export function useWallet() {
     }
   }, []);
 
-  // 5. Disconnect (Clears state, MetaMask doesn't have a true disconnect API)
+  // 5. Disconnect
   const disconnect = useCallback(() => {
     setAddress("");
     setSigner(null);
