@@ -3,9 +3,12 @@ const keccak256 = require('keccak256');
 const { ethers } = require('ethers');
 
 function hashCredential(credential) {
+	// Normalize address casing using checksum address
+	const normalizedAddress = ethers.getAddress(credential.issuerAddress.trim());
+	
 	const encoded = ethers.solidityPacked(
 		['string', 'string', 'address'],
-		[credential.studentName, credential.degreeTitle, credential.issuerAddress]
+		[credential.studentName.trim(), credential.degreeTitle.trim(), normalizedAddress]
 	);
 	return keccak256(encoded);
 }
