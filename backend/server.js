@@ -8,12 +8,14 @@ const { ZipArchive } = require('archiver');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const mongoose = require('mongoose');
-const { ethers } = require('ethers'); // Added missing ethers import
+const { ethers } = require('ethers');
 
 const { credentialRegistry } = require('./blockchain.js');
 const { buildMerkleTree } = require('./merkle.js');
 const { generateCertificate } = require('./certificate.js');
 const { sendCertificateEmail } = require('./mailer.js');
+const { generateCertificate } = require('./certificate.js');
+const { sendWithRetry, startEmailQueueProcessor } = require('./mailer.js');
 
 // MONGOOSE SCHEMA
 const credentialSchema = new mongoose.Schema({
@@ -46,27 +48,15 @@ async function connectDB() {
 	try {
 		await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/verifychain');
 		console.log('MongoDB connected');
+
+		startEmailQueueProcessor();
+		console.log('Email retry queue processor started');
 	} catch (err) {
 		console.error('MongoDB connection failed:', err.message);
 		process.exit(1);
 	}
 }
 connectDB();
-
-// Helper Function for Email Retry
-async function sendWithRetry(email, studentName, pdfBytes) {
-	try {
-		await sendCertificateEmail(email, studentName, pdfBytes);
-		return true;
-	} catch (firstError) {
-		try {
-			await sendCertificateEmail(email, studentName, pdfBytes);
-			return true;
-		} catch (secondError) {
-			return false;
-		}
-	}
-}
 
 // 25-STUDENT CSV TEMPLATE ROUTE
 app.get('/api/issuer/csv-template', (req, res) => {
