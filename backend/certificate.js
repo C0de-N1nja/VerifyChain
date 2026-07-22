@@ -4,7 +4,8 @@ const QRCode = require('qrcode');
 async function generateCertificate(credential, merkleRoot, leaf, proof) {
 
 	const proofParam = proof.join(',');
-	const verifyUrl = `http://localhost:3000/api/verify/${encodeURIComponent(credential.studentName)}?merkleRoot=${merkleRoot}&leaf=${leaf}&proof=${proofParam}`;
+	// Points to the React Frontend Verifier Portal on port 5173
+	const verifyUrl = `http://localhost:5173/verify?merkleRoot=${merkleRoot}&leaf=${leaf}&proof=${proofParam}`;
 
 	const qrImageBytes = await QRCode.toBuffer(verifyUrl);
 
