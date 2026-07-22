@@ -1,7 +1,21 @@
 require('dotenv').config();
 
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const { ZipArchive } = require('archiver');
+const multer = require('multer');
+const { parse } = require('csv-parse/sync');
 const mongoose = require('mongoose');
+const { ethers } = require('ethers'); // Added missing ethers import
 
+const { credentialRegistry } = require('./blockchain.js');
+const { buildMerkleTree } = require('./merkle.js');
+const { generateCertificate } = require('./certificate.js');
+const { sendCertificateEmail } = require('./mailer.js');
+
+// MONGOOSE SCHEMA
 const credentialSchema = new mongoose.Schema({
 	studentName: { type: String, required: true },
 	degreeTitle: { type: String, required: true },
@@ -9,6 +23,7 @@ const credentialSchema = new mongoose.Schema({
 	issuerAddress: { type: String, required: true, lowercase: true, index: true },
 	merkleRoot: { type: String, required: true, lowercase: true, index: true },
 	leafHash: { type: String, required: true, unique: true, lowercase: true },
+	proof: { type: Array, default: [] },
 	revoked: { type: Boolean, default: false },
 	revokedAt: { type: Date, default: null },
 	issuedAt: { type: Date, default: Date.now }
@@ -17,19 +32,6 @@ const credentialSchema = new mongoose.Schema({
 credentialSchema.index({ issuerAddress: 1, issuedAt: -1 });
 
 const Credential = mongoose.model('Credential', credentialSchema);
-
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
-const { ZipArchive } = require('archiver');
-const multer = require('multer');
-const { parse } = require('csv-parse/sync');
-
-const { credentialRegistry } = require('./blockchain.js');
-const { buildMerkleTree } = require('./merkle.js');
-const { generateCertificate } = require('./certificate.js');
-const { sendCertificateEmail } = require('./mailer.js');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -51,7 +53,7 @@ async function connectDB() {
 }
 connectDB();
 
-// Helper Function
+// Helper Function for Email Retry
 async function sendWithRetry(email, studentName, pdfBytes) {
 	try {
 		await sendCertificateEmail(email, studentName, pdfBytes);
@@ -66,11 +68,43 @@ async function sendWithRetry(email, studentName, pdfBytes) {
 	}
 }
 
-// Issuer Portal: Prepration Routes
+// 25-STUDENT CSV TEMPLATE ROUTE
 app.get('/api/issuer/csv-template', (req, res) => {
-	const csvContent = 'studentName,degreeTitle,issuerAddress,email,expiryTimestamp\nAli Raza,BSCS,0x19992c2DE1Da16b33bE1Aef78C0f99674A839E70,ali@example.com,0\n';
+	const header = 'studentName,degreeTitle,issuerAddress,email,expiryTimestamp\n';
+	const issuer = '0x19992c2DE1Da16b33bE1Aef78C0f99674A839E70';
+
+	const students = [
+		`Ali Raza,BS Computer Science,${issuer},ali.raza@example.com,0`,
+		`Sara Khan,MS Data Science,${issuer},sara.khan@example.com,0`,
+		`Usman Ahmed,BS Software Engineering,${issuer},usman.ahmed@example.com,0`,
+		`Fatima Zahra,BS Information Technology,${issuer},fatima.zahra@example.com,0`,
+		`Hamza Malik,MS Cybersecurity,${issuer},hamza.malik@example.com,0`,
+		`Ayesha Bibi,BS Artificial Intelligence,${issuer},ayesha.bibi@example.com,0`,
+		`Bilal Hassan,BS Computer Science,${issuer},bilal.hassan@example.com,0`,
+		`Zainab Omer,BS Software Engineering,${issuer},zainab.omer@example.com,0`,
+		`Mustafa Ali,MS Data Science,${issuer},mustafa.ali@example.com,0`,
+		`Maryam Nawaz,BS Information Technology,${issuer},maryam.nawaz@example.com,0`,
+		`Tariq Jameel,BS Electrical Engineering,${issuer},tariq.jameel@example.com,0`,
+		`Sana Sheikh,MS Software Engineering,${issuer},sana.sheikh@example.com,0`,
+		`Omer Farooq,BS Computer Science,${issuer},omer.farooq@example.com,0`,
+		`Hassan Raza,BS Artificial Intelligence,${issuer},hassan.raza@example.com,0`,
+		`Khadija Bibi,MS Cybersecurity,${issuer},khadija.bibi@example.com,0`,
+		`Asadullah Khan,BS Software Engineering,${issuer},asad.khan@example.com,0`,
+		`Noreen Fatima,BS Information Technology,${issuer},noreen.fatima@example.com,0`,
+		`Waqas Saeed,MS Computer Science,${issuer},waqas.saeed@example.com,0`,
+		`Zubaida Khatoon,BS Data Analytics,${issuer},zubaida.k@example.com,0`,
+		`Imran Abbasi,BS Computer Science,${issuer},imran.abbasi@example.com,0`,
+		`Shahid Iqbal,MS Artificial Intelligence,${issuer},shahid.iqbal@example.com,0`,
+		`Rabia Basri,BS Software Engineering,${issuer},rabia.basri@example.com,0`,
+		`Daniyal Muneer,BS Information Technology,${issuer},daniyal.m@example.com,0`,
+		`Areeba Tariq,MS Data Science,${issuer},areeba.tariq@example.com,0`,
+		`Zohaib Shah,BS Computer Science,${issuer},zohaib.shah@example.com,0`
+	];
+
+	const csvContent = header + students.join('\n') + '\n';
+
 	res.setHeader('Content-Type', 'text/csv');
-	res.setHeader('Content-Disposition', 'attachment; filename="verifychain-template.csv"');
+	res.setHeader('Content-Disposition', 'attachment; filename="verifychain-25-students-template.csv"');
 	res.send(csvContent);
 });
 
@@ -82,9 +116,17 @@ app.post('/api/issuer/prepare-batch', (req, res) => {
 			return res.status(400).json({ error: 'credentials array is required' });
 		}
 
-		const { tree, leaves, root } = buildMerkleTree(credentials);
+		const formattedCredentials = credentials.map(c => ({
+			studentName: c.studentName.trim(),
+			degreeTitle: c.degreeTitle.trim(),
+			issuerAddress: ethers.getAddress(c.issuerAddress.trim()),
+			email: c.email ? c.email.trim() : undefined,
+			expiryTimestamp: c.expiryTimestamp ? Number(c.expiryTimestamp) : 0
+		}));
 
-		const prepared = credentials.map((credential, i) => ({
+		const { tree, leaves, root } = buildMerkleTree(formattedCredentials);
+
+		const prepared = formattedCredentials.map((credential, i) => ({
 			credential,
 			leaf: '0x' + leaves[i].toString('hex'),
 			proof: tree.getHexProof(leaves[i])
@@ -120,10 +162,10 @@ app.post('/api/issuer/prepare-batch-csv', upload.single('file'), (req, res) => {
 		}
 
 		const credentials = records.map(row => ({
-			studentName: row.studentName,
-			degreeTitle: row.degreeTitle,
-			issuerAddress: row.issuerAddress,
-			email: row.email || undefined,
+			studentName: row.studentName.trim(),
+			degreeTitle: row.degreeTitle.trim(),
+			issuerAddress: ethers.getAddress(row.issuerAddress.trim()),
+			email: row.email ? row.email.trim() : undefined,
 			expiryTimestamp: row.expiryTimestamp ? Number(row.expiryTimestamp) : 0
 		}));
 
@@ -164,6 +206,7 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 
 			const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
 			if (!isValid) {
+				console.warn(`Proof verification returned false for leaf: ${leaf}`);
 				continue;
 			}
 
@@ -174,7 +217,8 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 					email: credential.email || undefined,
 					issuerAddress: batch.issuer,
 					merkleRoot: merkleRoot,
-					leafHash: leaf
+					leafHash: leaf,
+					proof: proof || []
 				});
 			} catch (dbErr) {
 				if (dbErr.code === 11000) {
@@ -196,11 +240,16 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 
 			results.push({ credential, leaf, proof, emailed });
 		}
+
 		let zipDownloadUrl = null;
 
 		if (failedEmails.length > 0) {
 			const zipFileName = `failed-certs-${Date.now()}.zip`;
 			const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
+
+			if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
+				fs.mkdirSync(path.join(__dirname, 'temp-zips'));
+			}
 
 			await new Promise((resolve, reject) => {
 				const output = fs.createWriteStream(zipPath);
@@ -273,7 +322,7 @@ app.get('/api/issuer/credentials', async (req, res) => {
 		if (merkleRoot) filter.merkleRoot = merkleRoot.toLowerCase();
 
 		const records = await Credential.find(filter)
-			.select('studentName degreeTitle leafHash merkleRoot revoked revokedAt issuedAt -_id')
+			.select('studentName degreeTitle leafHash merkleRoot proof revoked revokedAt issuedAt -_id')
 			.sort({ issuedAt: -1 });
 
 		res.json({ credentials: records });
@@ -336,7 +385,7 @@ app.get('/api/issuer/revocation-history', async (req, res) => {
 app.get('/api/verify/:credentialId', async (req, res) => {
 	try {
 		const { merkleRoot, leaf, proof } = req.query;
-		const proofArray = proof ? proof.split(',') : [];
+		const proofArray = proof && proof.trim().length > 0 ? proof.split(',') : [];
 
 		const batch = await credentialRegistry.getBatch(merkleRoot);
 
