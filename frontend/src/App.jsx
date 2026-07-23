@@ -66,7 +66,7 @@ function Navigation() {
         </nav>
       </div>
 
-      <ConnectWallet />
+      {!isActive("/verify") && <ConnectWallet />}
     </header>
   );
 }
