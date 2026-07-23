@@ -1,11 +1,24 @@
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const QRCode = require('qrcode');
+const os = require('os');
+
+function getLocalIp() {
+	const interfaces = os.networkInterfaces();
+	for (const name of Object.keys(interfaces)) {
+		for (const iface of interfaces[name]) {
+			if (iface.family === 'IPv4' && !iface.internal) {
+				return iface.address;
+			}
+		}
+	}
+	return 'localhost';
+}
 
 async function generateCertificate(credential, merkleRoot, leaf, proof) {
 
 	const proofParam = proof.join(',');
-	const frontendBaseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-	const verifyUrl = `${frontendBaseUrl}/verify?merkleRoot=${merkleRoot}&leaf=${leaf}&proof=${proofParam} `;
+	const frontendBaseUrl = process.env.FRONTEND_URL || `http://${getLocalIp()}:5173`;
+	const verifyUrl = `${frontendBaseUrl}/verify?merkleRoot=${merkleRoot}&leaf=${leaf}&proof=${proofParam}`;
 
 	const qrImageBytes = await QRCode.toBuffer(verifyUrl);
 
