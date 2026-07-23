@@ -13,8 +13,6 @@ const { ethers } = require('ethers');
 const { credentialRegistry } = require('./blockchain.js');
 const { buildMerkleTree } = require('./merkle.js');
 const { generateCertificate } = require('./certificate.js');
-const { sendCertificateEmail } = require('./mailer.js');
-const { generateCertificate } = require('./certificate.js');
 const { sendWithRetry, startEmailQueueProcessor } = require('./mailer.js');
 
 // MONGOOSE SCHEMA
@@ -43,7 +41,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Database Connection
+// Database Connection & Queue Processor Startup
 async function connectDB() {
 	try {
 		await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/verifychain');
