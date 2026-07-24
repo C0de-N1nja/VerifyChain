@@ -107,9 +107,9 @@ export default function IssuerPortal() {
   }
 
   // Handle Single Credential Preparation
-  const handlePrepareBatch = async (e) => {
+const handlePrepareBatch = async (e) => {
     e.preventDefault();
-    setToast({ message: "Securing credential data...", type: "info" });
+    setToast({ message: "Generating Merkle Tree...", type: "info" });
 
     try {
       const issueTimestamp = Math.floor(new Date(issueDate).getTime() / 1000);
@@ -127,6 +127,7 @@ export default function IssuerPortal() {
             issuerAddress: address,
             email: email || undefined,
             expiryTimestamp,
+            institutionName: institution,
           },
         ],
       };
@@ -147,7 +148,7 @@ export default function IssuerPortal() {
       setToast({ message: err.message, type: "error" });
     }
   };
-
+  
   // Handle Bulk CSV Preparation
   const handleCsvUpload = async (file) => {
     if (!file) return;
