@@ -93,14 +93,14 @@ export default function IssuerPortal() {
   };
 
   if (role.isLoading)
-    return <div className="text-center text-slate-500 py-20 text-xs font-medium">Checking issuer authorization...</div>;
+    return <div className="text-center text-slate-500 py-20 text-sm font-medium">Checking issuer authorization...</div>;
 
   if (!role.isIssuer) {
     return (
-      <div className="max-w-md mx-auto my-12 text-center space-y-4 modern-glass-card p-8 rounded-3xl border border-slate-200">
-        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
-        <p className="text-slate-600 text-xs">
-          Your connected wallet address is not an activated institutional issuer.
+      <div className="max-w-md mx-auto my-12 text-center space-y-4 bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-900">Access Restricted</h2>
+        <p className="text-slate-600 text-sm">
+          Your connected account is not an authorized institutional issuer.
         </p>
       </div>
     );
@@ -109,7 +109,7 @@ export default function IssuerPortal() {
   // Handle Single Credential Preparation
   const handlePrepareBatch = async (e) => {
     e.preventDefault();
-    setToast({ message: "Generating Merkle Tree...", type: "info" });
+    setToast({ message: "Securing credential data...", type: "info" });
 
     try {
       const issueTimestamp = Math.floor(new Date(issueDate).getTime() / 1000);
@@ -151,7 +151,7 @@ export default function IssuerPortal() {
   // Handle Bulk CSV Preparation
   const handleCsvUpload = async (file) => {
     if (!file) return;
-    setToast({ message: "Parsing CSV file...", type: "info" });
+    setToast({ message: "Processing CSV file...", type: "info" });
 
     const formData = new FormData();
     formData.append("file", file);
@@ -200,7 +200,7 @@ export default function IssuerPortal() {
         contract.registerBatch(batchData.merkleRoot, expiryTimestamp)
       );
 
-      setToast({ message: "Batch anchored on-chain. Generating certificates...", type: "info" });
+      setToast({ message: "Credential registered. Generating certificates...", type: "info" });
 
       const response = await fetch(`${API_URL}/api/issuer/confirm-batch`, {
         method: "POST",
@@ -216,10 +216,10 @@ export default function IssuerPortal() {
 
       setIssueResults(data);
       setView("success");
-      setToast({ message: "Credential batch successfully issued.", type: "success" });
+      setToast({ message: "Credential successfully issued.", type: "success" });
     } catch (err) {
       setToast({
-        message: parseError(err) || "Blockchain transaction failed.",
+        message: parseError(err) || "Issuance failed.",
         type: "error",
       });
     }
@@ -243,7 +243,7 @@ export default function IssuerPortal() {
         }),
       });
 
-      setToast({ message: "Credential revoked on-chain.", type: "success" });
+      setToast({ message: "Credential revoked.", type: "success" });
       setRevokeTarget(null);
       setConfirmText("");
       fetchDashboardData();
@@ -266,7 +266,7 @@ export default function IssuerPortal() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 py-4 font-sans">
+    <div className="max-w-4xl mx-auto space-y-8 py-6 font-sans">
       <TransactionOverlay status={status} error={error} onClose={reset} />
       <Toast
         message={toast.message}
@@ -277,38 +277,32 @@ export default function IssuerPortal() {
       {/* PORTAL HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
         <div>
-          <span className="text-xs font-mono font-bold uppercase text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100">
-            Institutional Issuer Interface
+          <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100">
+            Issuer Portal
           </span>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mt-1">
-            Credential Issuer Portal
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight mt-2">
+            Credential Management
           </h1>
         </div>
-        <span
-          className={`text-xs font-mono font-bold px-3 py-1.5 rounded-lg border shadow-sm ${
-            role.tier === 1
-              ? "bg-blue-50 text-blue-700 border-blue-200"
-              : "bg-purple-50 text-purple-700 border-purple-200"
-          }`}
-        >
-          Tier {role.tier} {role.tier === 1 ? "Academic Issuer" : "Professional Certification"}
+        <span className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700">
+          Authorized {role.tier === 1 ? "Academic" : "Professional"} Issuer
         </span>
       </div>
 
       {/* TABS NAVIGATION */}
-      <div className="flex gap-2 border-b border-slate-200 pb-1">
+      <div className="flex gap-6 border-b border-slate-200">
         {[
           { id: "issue", label: "Issue Credentials" },
           { id: "history", label: "Batch History" },
-          { id: "revocation", label: "Revocation Panel" },
+          { id: "revocation", label: "Revocation" },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            className={`px-1 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === tab.id
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                : "text-slate-600 hover:bg-slate-100"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-slate-500 hover:text-slate-900"
             }`}
           >
             {tab.label}
@@ -318,14 +312,14 @@ export default function IssuerPortal() {
 
       {/* ISSUE TAB */}
       {activeTab === "issue" && (
-        <div className="modern-glass-card p-8 rounded-3xl space-y-6 border border-slate-200">
+        <div className="bg-white p-8 rounded-xl space-y-6 border border-slate-200 shadow-sm">
           {view === "form" && (
             <div className="space-y-6">
               {/* MODE TOGGLE */}
-              <div className="flex gap-2 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
+              <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit border border-slate-200">
                 <button
                   onClick={() => setIssuanceMode("single")}
-                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
                     issuanceMode === "single"
                       ? "bg-white text-slate-900 shadow-sm"
                       : "text-slate-500 hover:text-slate-900"
@@ -335,7 +329,7 @@ export default function IssuerPortal() {
                 </button>
                 <button
                   onClick={() => setIssuanceMode("bulk")}
-                  className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
                     issuanceMode === "bulk"
                       ? "bg-white text-slate-900 shadow-sm"
                       : "text-slate-500 hover:text-slate-900"
@@ -346,93 +340,107 @@ export default function IssuerPortal() {
               </div>
 
               {issuanceMode === "single" ? (
-                <form onSubmit={handlePrepareBatch} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold uppercase text-slate-700">Student Name</label>
-                      <input
-                        type="text"
-                        value={studentName}
-                        onChange={(e) => setStudentName(e.target.value)}
-                        required
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold uppercase text-slate-700">Student Email</label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="For PDF delivery"
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold uppercase text-slate-700">Degree Title</label>
-                    <input
-                      type="text"
-                      value={degreeTitle}
-                      onChange={(e) => setDegreeTitle(e.target.value)}
-                      required
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold uppercase text-slate-700">Institution Name</label>
-                    <input
-                      type="text"
-                      value={institution}
-                      onChange={(e) => setInstitution(e.target.value)}
-                      required
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold uppercase text-slate-700">Issue Date</label>
-                      <input
-                        type="date"
-                        value={issueDate}
-                        onChange={(e) => setIssueDate(e.target.value)}
-                        required
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
-                      />
-                    </div>
-                    {role.tier === 2 && (
-                      <div className="space-y-1">
-                        <label className="block text-xs font-bold uppercase text-slate-700">Expiry Date</label>
+                <form onSubmit={handlePrepareBatch} className="space-y-6">
+                  {/* STUDENT DETAILS */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-slate-800">Student Details</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label htmlFor="studentName" className="block text-sm font-medium text-slate-700">Student Name</label>
                         <input
-                          type="date"
-                          value={expiryDate}
-                          onChange={(e) => setExpiryDate(e.target.value)}
+                          id="studentName"
+                          type="text"
+                          value={studentName}
+                          onChange={(e) => setStudentName(e.target.value)}
                           required
-                          className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         />
                       </div>
-                    )}
+                      <div className="space-y-1.5">
+                        <label htmlFor="email" className="block text-sm font-medium text-slate-700">Student Email</label>
+                        <input
+                          id="email"
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="For PDF delivery"
+                          className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ACADEMIC DETAILS */}
+                  <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <h3 className="text-sm font-semibold text-slate-800">Academic Details</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label htmlFor="degreeTitle" className="block text-sm font-medium text-slate-700">Degree Title</label>
+                        <input
+                          id="degreeTitle"
+                          type="text"
+                          value={degreeTitle}
+                          onChange={(e) => setDegreeTitle(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label htmlFor="institution" className="block text-sm font-medium text-slate-700">Institution Name</label>
+                        <input
+                          id="institution"
+                          type="text"
+                          value={institution}
+                          onChange={(e) => setInstitution(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label htmlFor="issueDate" className="block text-sm font-medium text-slate-700">Issue Date</label>
+                          <input
+                            id="issueDate"
+                            type="date"
+                            value={issueDate}
+                            onChange={(e) => setIssueDate(e.target.value)}
+                            required
+                            className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                        </div>
+                        {role.tier === 2 && (
+                          <div className="space-y-1.5">
+                            <label htmlFor="expiryDate" className="block text-sm font-medium text-slate-700">Expiry Date</label>
+                            <input
+                              id="expiryDate"
+                              type="date"
+                              value={expiryDate}
+                              onChange={(e) => setExpiryDate(e.target.value)}
+                              required
+                              className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600"
                   >
-                    Prepare Merkle Root
+                    Review Credential
                   </button>
                 </form>
               ) : (
                 <div className="space-y-6">
-                  <div className="flex justify-between items-center bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                    <span className="text-xs text-indigo-900 font-medium">Standard CSV Column Format Required</span>
+                  <div className="flex justify-between items-center bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                    <span className="text-sm text-indigo-900 font-medium">Standard CSV format required</span>
                     <a
                       href={`${API_URL}/api/issuer/csv-template`}
-                      className="text-xs font-bold text-indigo-600 hover:underline"
+                      className="text-sm font-medium text-indigo-600 hover:underline"
                     >
-                      Download Sample CSV (25 Students)
+                      Download Template
                     </a>
                   </div>
 
@@ -444,10 +452,10 @@ export default function IssuerPortal() {
                     }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
+                    className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${
                       isDragging
-                        ? "border-indigo-500 bg-indigo-50/50"
-                        : "border-slate-300 hover:border-slate-400 bg-slate-50/50"
+                        ? "border-indigo-500 bg-indigo-50"
+                        : "border-slate-300 hover:border-slate-400 bg-slate-50"
                     }`}
                   >
                     <input
@@ -457,59 +465,73 @@ export default function IssuerPortal() {
                       onChange={handleFileChange}
                       className="hidden"
                     />
-                    <p className="text-xs font-bold text-slate-700 mb-1">
+                    <p className="text-sm font-medium text-slate-700 mb-1">
                       Drag and drop CSV file here, or click to browse
                     </p>
-                    <p className="text-[11px] text-slate-400 font-mono">Supports up to 1000 records per Merkle Root batch</p>
+                    <p className="text-xs text-slate-500">Supports up to 1000 records per batch</p>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* REVIEW MERKLE ROOT STAGE */}
+          {/* REVIEW STAGE */}
           {view === "review" && batchData && (
             <div className="space-y-6">
               <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900">Review Batch Specifications</h3>
-                <p className="text-slate-500 text-xs">Verify the calculated Merkle Root before committing on-chain.</p>
+                <h3 className="text-lg font-semibold text-slate-900">Review & Confirm</h3>
+                <p className="text-slate-500 text-sm">Please review the credential details below before finalizing.</p>
               </div>
 
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3 font-mono text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-sans">Credential Count:</span>
-                  <span className="font-bold text-slate-900">{batchData.credentials.length} Record(s)</span>
+              <div className="bg-slate-50 p-5 rounded-lg border border-slate-200 space-y-4">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500">Total Credentials:</span>
+                  <span className="font-medium text-slate-900">{batchData.credentials.length} Record(s)</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-sans">Calculated Merkle Root:</span>
-                  <span className="font-bold text-indigo-600">{formatAddress(batchData.merkleRoot)}</span>
+                
+                {/* Show student details if single mode */}
+                {batchData.credentials.length === 1 && batchData.credentials[0].credential && (
+                  <div className="pt-4 border-t border-slate-200 space-y-2 text-sm">
+                     <div className="flex justify-between"><span className="text-slate-500">Name:</span><span className="font-medium text-slate-900">{batchData.credentials[0].credential.studentName}</span></div>
+                     <div className="flex justify-between"><span className="text-slate-500">Degree:</span><span className="font-medium text-slate-900">{batchData.credentials[0].credential.degreeTitle}</span></div>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-4 border-t border-slate-200 text-sm">
+                  <span className="text-slate-500">Secure Batch ID:</span>
+                  <span className="font-mono text-xs text-indigo-600">{formatAddress(batchData.merkleRoot)}</span>
                 </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                <p>Once confirmed, this credential will be permanently registered and cannot be altered.</p>
               </div>
 
               <button
                 onClick={handleConfirmRegister}
                 disabled={status === "pending"}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600"
               >
-                {status === "pending" ? "Awaiting Wallet Signature..." : "Confirm & Register on zkSync"}
+                {status === "pending" ? "Waiting for institutional approval..." : "Confirm & Issue Credential"}
               </button>
             </div>
           )}
 
-          {/* ISSUANCE COMPLETE SUCCESS STAGE WITH DIRECT ONE-CLICK VERIFY BUTTON */}
+          {/* SUCCESS STAGE */}
           {view === "success" && issueResults && (
             <div className="text-center space-y-6">
-              <div className="w-12 h-12 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto shadow-md shadow-emerald-500/20 font-bold text-xl">
-                ✓
+              <div className="w-12 h-12 bg-emerald-600 text-white rounded-full flex items-center justify-center mx-auto shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-extrabold text-slate-900">Issuance Complete</h3>
-                <p className="text-slate-500 text-xs font-mono">
-                  {issueResults.issued.length} credential(s) anchored under Merkle Root {formatAddress(issueResults.merkleRoot)}
+                <h3 className="text-xl font-semibold text-slate-900">Credential Successfully Issued</h3>
+                <p className="text-slate-500 text-sm">
+                  {issueResults.issued.length} credential(s) have been secured and emailed.
                 </p>
               </div>
 
-              {/* ONE-CLICK DIRECT VERIFICATION BUTTON WITH PROOF */}
               {issueResults.issued.length > 0 && (
                 <div className="pt-2">
                   <button
@@ -518,19 +540,19 @@ export default function IssuerPortal() {
                       const proofString = firstCred.proof && Array.isArray(firstCred.proof) ? firstCred.proof.join(',') : '';
                       navigate(`/verify?merkleRoot=${issueResults.merkleRoot}&leaf=${firstCred.leaf}&proof=${proofString}`);
                     }}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl text-xs transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm flex items-center justify-center gap-2"
                   >
-                    <span>Verify First Certificate Live ↗</span>
+                    View Verification Page
                   </button>
                 </div>
               )}
 
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-left max-h-60 overflow-y-auto space-y-2 text-xs">
-                <p className="font-bold text-slate-700 uppercase text-[10px]">Email Dispatch Results:</p>
+              <div className="bg-white p-4 rounded-lg border border-slate-200 text-left max-h-60 overflow-y-auto space-y-2">
+                <p className="font-medium text-slate-700 uppercase text-xs tracking-wider">Delivery Status:</p>
                 {issueResults.issued.map((item, i) => (
-                  <div key={i} className="flex justify-between items-center border-b border-slate-200/60 pb-2 last:border-0 font-mono">
-                    <span className="text-slate-800 font-sans font-medium">{item.credential.studentName}</span>
-                    <span className={item.emailed ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                  <div key={i} className="flex justify-between items-center border-b border-slate-100 pb-2 last:border-0">
+                    <span className="text-sm text-slate-800 font-medium">{item.credential.studentName}</span>
+                    <span className={`text-xs font-medium ${item.emailed ? "text-emerald-600" : "text-amber-600"}`}>
                       {item.emailed ? "Email Delivered" : "Delivery Failed"}
                     </span>
                   </div>
@@ -539,92 +561,93 @@ export default function IssuerPortal() {
 
               <button
                 onClick={resetForm}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl text-xs transition-colors border border-slate-300"
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium py-3 rounded-lg text-sm transition-colors border border-slate-300"
               >
-                Issue Another Batch
+                Issue Another Credential
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* EXPANDABLE BATCH HISTORY TAB */}
+      {/* BATCH HISTORY TAB */}
       {activeTab === "history" && (
         <div className="space-y-4">
           {isLoadingHistory ? (
-            <p className="text-slate-500 text-center py-12 text-xs">Loading batch history...</p>
+            <p className="text-slate-500 text-center py-12 text-sm">Loading batch history...</p>
           ) : history.length === 0 ? (
-            <p className="text-slate-500 text-center py-16 text-xs">No batches have been issued by this address yet.</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+               <p className="text-slate-500 text-sm">No credentials have been issued yet.</p>
+            </div>
           ) : (
             history.map((batch, i) => {
               const isExpanded = expandedBatch === batch.merkleRoot;
 
               return (
-                <div key={i} className="modern-glass-card rounded-2xl border border-slate-200 overflow-hidden space-y-2">
-                  <div className="p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white">
+                <div key={i} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="p-5 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded border border-indigo-100">
-                          Block #{batch.blockNumber}
+                        <span className="text-xs font-mono font-medium bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded border border-slate-200">
+                          Batch ID: {formatAddress(batch.merkleRoot)}
                         </span>
-                        <span className="text-[10px] font-sans font-medium text-slate-500">
+                        <span className="text-xs text-slate-500">
                           {batch.expiryTimestamp === "0" ? "Permanent Degree" : "Time-Bound Certification"}
                         </span>
                       </div>
-                      <p className="font-mono text-xs font-bold text-slate-900">
-                        Merkle Root: <span className="text-indigo-600">{formatAddress(batch.merkleRoot)}</span>
+                      <p className="text-sm text-slate-800 font-medium">
+                        {batch.studentCount || 'Multiple'} Record(s)
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleExpandBatch(batch.merkleRoot)}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors border border-slate-300"
+                        className="bg-white hover:bg-slate-50 text-slate-800 font-medium px-3.5 py-2 rounded-lg text-sm transition-colors border border-slate-300"
                       >
-                        {isExpanded ? "Hide Students ↑" : "View Students"}
+                        {isExpanded ? "Hide Records" : "View Records"}
                       </button>
 
                       <button
                         onClick={() =>
                           navigate(`/verify?merkleRoot=${batch.merkleRoot}&leaf=${batch.merkleRoot}&proof=`)
                         }
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition-colors shadow-sm"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3.5 py-2 rounded-lg text-sm transition-colors shadow-sm"
                       >
-                        Inspect On-Chain ↗
+                        Verify Batch
                       </button>
                     </div>
                   </div>
 
-                  {/* EXPANDABLE DRAWER SHOWING STUDENT RECORDS IN THIS BATCH */}
                   {isExpanded && (
-                    <div className="bg-slate-50/90 border-t border-slate-200 p-5 space-y-3">
-                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Students Included in Batch ({formatAddress(batch.merkleRoot)}):
+                    <div className="bg-slate-50 border-t border-slate-200 p-5 space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                        Included Records
                       </p>
 
                       {isLoadingBatchStudents ? (
-                        <p className="text-slate-400 text-xs font-mono">Fetching student records...</p>
+                        <p className="text-slate-500 text-sm">Fetching records...</p>
                       ) : batchStudents.length === 0 ? (
-                        <p className="text-slate-400 text-xs">No off-chain records indexed for this root.</p>
+                        <p className="text-slate-500 text-sm">No records found for this batch.</p>
                       ) : (
                         <div className="space-y-2">
                           {batchStudents.map((cred, idx) => (
                             <div
                               key={idx}
-                              className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs"
+                              className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center"
                             >
                               <div>
-                                <p className="font-bold text-slate-900">{cred.studentName}</p>
-                                <p className="text-slate-500 text-[11px]">{cred.degreeTitle}</p>
+                                <p className="font-medium text-slate-900 text-sm">{cred.studentName}</p>
+                                <p className="text-slate-500 text-xs">{cred.degreeTitle}</p>
                               </div>
                               <button
                                 onClick={() => {
                                   const proofString = cred.proof && Array.isArray(cred.proof) ? cred.proof.join(',') : '';
                                   navigate(`/verify?merkleRoot=${cred.merkleRoot}&leaf=${cred.leafHash}&proof=${proofString}`);
                                 }}
-                                className="text-indigo-600 font-bold hover:underline text-xs"
+                                className="text-indigo-600 font-medium hover:underline text-sm"
                               >
-                                Verify Credential ↗
+                                Verify
                               </button>
                             </div>
                           ))}
@@ -639,23 +662,24 @@ export default function IssuerPortal() {
         </div>
       )}
 
-      {/* REVOCATION PANEL TAB */}
+      {/* REVOCATION TAB */}
       {activeTab === "revocation" && (
         <div className="space-y-4">
           {isLoadingHistory ? (
-            <p className="text-slate-500 text-center py-12 text-xs">Loading active credentials...</p>
+            <p className="text-slate-500 text-center py-12 text-sm">Loading active credentials...</p>
           ) : credentials.length === 0 ? (
-            <p className="text-slate-500 text-center py-16 text-xs">No credentials available to revoke.</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+               <p className="text-slate-500 text-sm">No credentials available to revoke.</p>
+            </div>
           ) : (
             credentials.map((cred, i) => (
               <div
                 key={i}
-                className="modern-glass-card p-5 rounded-2xl border border-slate-200 flex justify-between items-center gap-4"
+                className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center gap-4"
               >
                 <div className="space-y-1">
-                  <p className="font-bold text-xs text-slate-900">{cred.studentName}</p>
-                  <p className="text-[11px] text-slate-500">{cred.degreeTitle}</p>
-                  <p className="font-mono text-[10px] text-slate-400">Leaf: {formatAddress(cred.leafHash)}</p>
+                  <p className="font-medium text-slate-900 text-sm">{cred.studentName}</p>
+                  <p className="text-slate-500 text-xs">{cred.degreeTitle}</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -664,19 +688,19 @@ export default function IssuerPortal() {
                       const proofString = cred.proof && Array.isArray(cred.proof) ? cred.proof.join(',') : '';
                       navigate(`/verify?merkleRoot=${cred.merkleRoot}&leaf=${cred.leafHash}&proof=${proofString}`);
                     }}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-xl text-xs transition-colors border border-slate-300"
+                    className="bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors border border-slate-300"
                   >
-                    Verify Status ↗
+                    Verify
                   </button>
 
                   {cred.revoked ? (
-                    <span className="text-[10px] font-mono font-bold bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200">
-                      Revoked On-Chain
+                    <span className="text-xs font-medium bg-rose-50 text-rose-700 px-3 py-1.5 rounded-lg border border-rose-200">
+                      Revoked
                     </span>
                   ) : (
                     <button
                       onClick={() => setRevokeTarget(cred)}
-                      className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold px-3.5 py-1.5 rounded-xl text-xs border border-rose-200 transition-colors"
+                      className="bg-white hover:bg-rose-50 text-rose-700 font-medium px-3.5 py-1.5 rounded-lg text-sm border border-rose-200 transition-colors"
                     >
                       Revoke
                     </button>
@@ -688,30 +712,31 @@ export default function IssuerPortal() {
         </div>
       )}
 
-      {/* PERMANENT REVOCATION CONFIRMATION MODAL */}
+      {/* REVOCATION MODAL */}
       {revokeTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-3xl p-8 max-w-md w-full space-y-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-8 max-w-md w-full space-y-6 shadow-xl">
             <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold uppercase bg-rose-50 text-rose-700 px-2.5 py-1 rounded border border-rose-200">
+              <span className="text-xs font-semibold uppercase tracking-wider bg-rose-50 text-rose-700 px-2.5 py-1 rounded border border-rose-200">
                 Irreversible Action
               </span>
-              <h3 className="text-lg font-extrabold text-slate-900">Confirm Permanent Revocation</h3>
-              <p className="text-slate-600 text-xs leading-relaxed">
-                You are about to permanently invalidate the credential for <span className="font-bold text-slate-900">{revokeTarget.studentName}</span> on the blockchain.
+              <h3 className="text-lg font-semibold text-slate-900">Revoke Credential</h3>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                You are about to permanently invalidate the credential for <span className="font-semibold text-slate-900">{revokeTarget.studentName}</span>.
               </p>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-              <p className="text-[11px] text-slate-500 font-medium">
-                To confirm, type <span className="font-mono font-bold text-rose-600">CONFIRM</span> in capital letters below:
-              </p>
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+              <label htmlFor="confirmText" className="block text-xs text-slate-500 font-medium">
+                To confirm, type <span className="font-mono font-semibold text-rose-600">CONFIRM</span> below:
+              </label>
               <input
+                id="confirmText"
                 type="text"
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder="CONFIRM"
-                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2 text-xs text-slate-900 font-mono focus:outline-none focus:border-rose-600"
+                className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
               />
             </div>
 
@@ -721,7 +746,7 @@ export default function IssuerPortal() {
                   setRevokeTarget(null);
                   setConfirmText("");
                 }}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                className="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-medium py-2.5 rounded-lg text-sm transition-colors border border-slate-300"
               >
                 Cancel
               </button>
@@ -729,9 +754,9 @@ export default function IssuerPortal() {
               <button
                 onClick={handleRevoke}
                 disabled={confirmText !== "CONFIRM" || status === "pending"}
-                className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-xs transition-all shadow-md shadow-rose-600/20"
+                className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm transition-colors shadow-sm"
               >
-                {status === "pending" ? "Revoking..." : "Revoke Permanently"}
+                {status === "pending" ? "Revoking..." : "Revoke Credential"}
               </button>
             </div>
           </div>
