@@ -26,7 +26,8 @@ const credentialSchema = new mongoose.Schema({
 	proof: { type: Array, default: [] },
 	revoked: { type: Boolean, default: false },
 	revokedAt: { type: Date, default: null },
-	issuedAt: { type: Date, default: Date.now }
+	issuedAt: { type: Date, default: Date.now },
+	institutionName: { type: String, default: '' },
 }, { timestamps: true });
 
 credentialSchema.index({ issuerAddress: 1, issuedAt: -1 });
@@ -109,7 +110,8 @@ app.post('/api/issuer/prepare-batch', (req, res) => {
 			degreeTitle: c.degreeTitle.trim(),
 			issuerAddress: ethers.getAddress(c.issuerAddress.trim()),
 			email: c.email ? c.email.trim() : undefined,
-			expiryTimestamp: c.expiryTimestamp ? Number(c.expiryTimestamp) : 0
+			expiryTimestamp: c.expiryTimestamp ? Number(c.expiryTimestamp) : 0,
+			institutionName: c.institutionName ? c.institutionName.trim() : ''
 		}));
 
 		const { tree, leaves, root } = buildMerkleTree(formattedCredentials);
@@ -154,7 +156,8 @@ app.post('/api/issuer/prepare-batch-csv', upload.single('file'), (req, res) => {
 			degreeTitle: row.degreeTitle.trim(),
 			issuerAddress: ethers.getAddress(row.issuerAddress.trim()),
 			email: row.email ? row.email.trim() : undefined,
-			expiryTimestamp: row.expiryTimestamp ? Number(row.expiryTimestamp) : 0
+			expiryTimestamp: row.expiryTimestamp ? Number(row.expiryTimestamp) : 0,
+			institutionName: row.institutionName ? row.institutionName.trim() : ''
 		}));
 
 		const { tree, leaves, root } = buildMerkleTree(credentials);
@@ -172,114 +175,114 @@ app.post('/api/issuer/prepare-batch-csv', upload.single('file'), (req, res) => {
 });
 
 app.post('/api/issuer/confirm-batch', async (req, res) => {
-    try {
-        const { merkleRoot, credentials } = req.body;
+	try {
+		const { merkleRoot, credentials } = req.body;
 
-        if (!merkleRoot || !credentials || !Array.isArray(credentials)) {
-            return res.status(400).json({ error: 'merkleRoot and credentials are required' });
-        }
+		if (!merkleRoot || !credentials || !Array.isArray(credentials)) {
+			return res.status(400).json({ error: 'merkleRoot and credentials are required' });
+		}
 
-        const batch = await credentialRegistry.getBatch(merkleRoot);
+		const batch = await credentialRegistry.getBatch(merkleRoot);
 
-        if (batch.issuer === '0x0000000000000000000000000000000000000000') {
-            return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
-        }
+		if (batch.issuer === '0x0000000000000000000000000000000000000000') {
+			return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
+		}
 
-        // 1. Rebuild the Merkle Tree on the backend to guarantee we have correct proofs
-        const rawCredentials = credentials.map(item => item.credential);
-        const { tree, leaves, root } = buildMerkleTree(rawCredentials);
+		// 1. Rebuild the Merkle Tree on the backend to guarantee we have correct proofs
+		const rawCredentials = credentials.map(item => item.credential);
+		const { tree, leaves, root } = buildMerkleTree(rawCredentials);
 
-        if (root !== merkleRoot) {
-            return res.status(400).json({ error: 'Merkle root mismatch. The credentials do not match the issued batch.' });
-        }
+		if (root !== merkleRoot) {
+			return res.status(400).json({ error: 'Merkle root mismatch. The credentials do not match the issued batch.' });
+		}
 
-        const results = [];
-        const failedEmails = [];
+		const results = [];
+		const failedEmails = [];
 
-        for (let i = 0; i < rawCredentials.length; i++) {
-            const credential = rawCredentials[i];
-            const leaf = '0x' + leaves[i].toString('hex');
-            const proof = tree.getHexProof(leaves[i]);
+		for (let i = 0; i < rawCredentials.length; i++) {
+			const credential = rawCredentials[i];
+			const leaf = '0x' + leaves[i].toString('hex');
+			const proof = tree.getHexProof(leaves[i]);
 
-            const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
-            if (!isValid) {
-                console.warn(`Proof verification returned false for leaf: ${leaf}`);
-                continue;
-            }
+			const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
+			if (!isValid) {
+				console.warn(`Proof verification returned false for leaf: ${leaf}`);
+				continue;
+			}
 
-            let alreadyExists = false;
-            try {
-                // 2. Save to Database with the correct proof
-                await Credential.create({
-                    studentName: credential.studentName,
-                    degreeTitle: credential.degreeTitle,
-                    email: credential.email || undefined,
-                    issuerAddress: batch.issuer,
-                    merkleRoot: merkleRoot,
-                    leafHash: leaf,
-                    proof: proof
-                });
-            } catch (dbErr) {
-                if (dbErr.code === 11000) {
-                    console.warn(`Credential ${leaf} already indexed, updating missing proof...`);
-                    // 3. FIX EXISTING RECORDS: Update the proof if it was missing
-                    await Credential.updateOne({ leafHash: leaf }, { $set: { proof: proof } });
-                    alreadyExists = true;
-                } else {
-                    console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
-                }
-            }
+			let alreadyExists = false;
+			try {
+				// 2. Save to Database with the correct proof
+				await Credential.create({
+					studentName: credential.studentName,
+					degreeTitle: credential.degreeTitle,
+					email: credential.email || undefined,
+					issuerAddress: batch.issuer,
+					merkleRoot: merkleRoot,
+					leafHash: leaf,
+					proof: proof,
+					institutionName: credential.institutionName || ''
+				});
+			} catch (dbErr) {
+				if (dbErr.code === 11000) {
+					console.warn(`Credential ${leaf} already indexed, updating missing proof...`);
+					// 3. FIX EXISTING RECORDS: Update the proof if it was missing
+					await Credential.updateOne({ leafHash: leaf }, { $set: { proof: proof, institutionName: credential.institutionName || '' } });
+				} else {
+					console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
+				}
+			}
 
-            // 4. Only send email if it's a brand new credential
-            if (!alreadyExists) {
-                const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
-                let emailed = false;
+			// 4. Only send email if it's a brand new credential
+			if (!alreadyExists) {
+				const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
+				let emailed = false;
 
-                if (credential.email) {
-                    emailed = await sendWithRetry(credential.email, credential.studentName, pdfBytes);
-                    if (!emailed) {
-                        failedEmails.push({ studentName: credential.studentName, pdfBytes });
-                    }
-                }
+				if (credential.email) {
+					emailed = await sendWithRetry(credential.email, credential.studentName, pdfBytes);
+					if (!emailed) {
+						failedEmails.push({ studentName: credential.studentName, pdfBytes });
+					}
+				}
 
-                results.push({ credential, leaf, proof, emailed });
-            } else {
-                results.push({ credential, leaf, proof, emailed: false, skipped: true });
-            }
-        }
+				results.push({ credential, leaf, proof, emailed });
+			} else {
+				results.push({ credential, leaf, proof, emailed: false, skipped: true });
+			}
+		}
 
-        let zipDownloadUrl = null;
+		let zipDownloadUrl = null;
 
-        if (failedEmails.length > 0) {
-            const zipFileName = `failed-certs-${Date.now()}.zip`;
-            const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
+		if (failedEmails.length > 0) {
+			const zipFileName = `failed-certs-${Date.now()}.zip`;
+			const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
 
-            if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
-                fs.mkdirSync(path.join(__dirname, 'temp-zips'));
-            }
+			if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
+				fs.mkdirSync(path.join(__dirname, 'temp-zips'));
+			}
 
-            await new Promise((resolve, reject) => {
-                const output = fs.createWriteStream(zipPath);
-                const archive = new ZipArchive({ zlib: { level: 9 } });
+			await new Promise((resolve, reject) => {
+				const output = fs.createWriteStream(zipPath);
+				const archive = new ZipArchive({ zlib: { level: 9 } });
 
-                output.on('close', resolve);
-                archive.on('error', reject);
-                archive.pipe(output);
+				output.on('close', resolve);
+				archive.on('error', reject);
+				archive.pipe(output);
 
-                failedEmails.forEach(item => {
-                    archive.append(Buffer.from(item.pdfBytes), { name: `${item.studentName}-certificate.pdf` });
-                });
+				failedEmails.forEach(item => {
+					archive.append(Buffer.from(item.pdfBytes), { name: `${item.studentName}-certificate.pdf` });
+				});
 
-                archive.finalize();
-            });
+				archive.finalize();
+			});
 
-            zipDownloadUrl = `/api/issuer/download-zip/${zipFileName}`;
-        }
+			zipDownloadUrl = `/api/issuer/download-zip/${zipFileName}`;
+		}
 
-        res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+		res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl });
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
 });
 
 app.post('/api/issuer/confirm-revocation', async (req, res) => {
@@ -297,15 +300,10 @@ app.post('/api/issuer/confirm-revocation', async (req, res) => {
 		}
 
 		try {
-			await Credential.create({
-				studentName: credential.studentName,
-				degreeTitle: credential.degreeTitle,
-				email: credential.email || undefined,
-				issuerAddress: batch.issuer,
-				merkleRoot: merkleRoot,
-				leafHash: leaf,
-				proof: proof || []
-			});
+			await Credential.updateOne(
+				{ leafHash: leafHash },
+				{ $set: { revoked: true, revokedAt: new Date() } }
+			);
 		} catch (dbErr) {
 			console.error(`Mongo update failed for revoked leaf ${leafHash}:`, dbErr.message);
 		}
@@ -420,7 +418,17 @@ app.get('/api/verify/:credentialId', async (req, res) => {
 			return res.json({ credentialId: req.params.credentialId, status: 'Not Found' });
 		}
 
-		res.json({ credentialId: req.params.credentialId, status: 'Valid', issuer: batch.issuer });
+		const credentialDoc = await Credential.findOne({ leafHash: leaf });
+
+		res.json({
+			credentialId: req.params.credentialId,
+			status: 'Valid',
+			issuer: batch.issuer,
+			studentName: credentialDoc?.studentName || null,
+			degreeTitle: credentialDoc?.degreeTitle || null,
+			institutionName: credentialDoc?.institutionName || null,
+			issuedAt: credentialDoc?.issuedAt || null
+		});
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
