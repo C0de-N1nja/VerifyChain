@@ -44,6 +44,10 @@ export default function IssuerPortal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [revokeSearchQuery, setRevokeSearchQuery] = useState("");
 
+  // Revocation Modal State
+  const [revokeTarget, setRevokeTarget] = useState(null);
+  const [confirmText, setConfirmText] = useState("");
+
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
@@ -205,7 +209,31 @@ export default function IssuerPortal() {
   };
 
   const handleRevoke = async () => {
-    // Retain your existing revoke logic here
+    if (!revokeTarget || confirmText !== "CONFIRM") return;
+    
+    try {
+      const contract = await getFreshContract("credentialRegistry", true);
+
+      await execute(() =>
+        contract.revokeCredential(revokeTarget.leafHash, revokeTarget.merkleRoot)
+      );
+
+      await fetch(`${API_URL}/api/issuer/confirm-revocation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leafHash: revokeTarget.leafHash,
+          merkleRoot: revokeTarget.merkleRoot,
+        }),
+      });
+
+      setToast({ message: "Credential revoked successfully.", type: "success" });
+      setRevokeTarget(null);
+      setConfirmText("");
+      fetchDashboardData();
+    } catch (err) {
+      setToast({ message: parseError(err) || "Failed to revoke credential.", type: "error" });
+    }
   };
 
   const resetForm = () => {
@@ -222,8 +250,26 @@ export default function IssuerPortal() {
     reset();
   };
 
-  // --- 3-LEVEL FILTERING & GROUPING LOGIC ---
-  const filteredCredentials = credentials.filter(cred => {
+  // --- 3-LEVEL FILTERING & GROUPING LOGIC (Shared for History & Revocation) ---
+  const groupCredentials = (credsToGroup) => {
+    return Object.entries(
+      credsToGroup.reduce((acc, cred) => {
+        const inst = cred.institutionName || 'Unknown Institution';
+        const dept = cred.department || 'General';
+        const batch = cred.merkleRoot;
+        
+        if (!acc[inst]) acc[inst] = {};
+        if (!acc[inst][dept]) acc[inst][dept] = {};
+        if (!acc[inst][dept][batch]) acc[inst][dept][batch] = [];
+        acc[inst][dept][batch].push(cred);
+        
+        return acc;
+      }, {})
+    );
+  };
+
+  // History Tab Data
+  const filteredHistoryCreds = credentials.filter(cred => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -233,33 +279,20 @@ export default function IssuerPortal() {
       cred.institutionName?.toLowerCase().includes(q)
     );
   });
+  const groupedHistory = groupCredentials(filteredHistoryCreds);
 
-  // Level 1: Institution -> Level 2: Department -> Level 3: Batch -> Students
-  const groupedHistory = Object.entries(
-    filteredCredentials.reduce((acc, cred) => {
-      const inst = cred.institutionName || 'Unknown Institution';
-      const dept = cred.department || 'General';
-      const batch = cred.merkleRoot;
-      
-      if (!acc[inst]) acc[inst] = {};
-      if (!acc[inst][dept]) acc[inst][dept] = {};
-      if (!acc[inst][dept][batch]) acc[inst][dept][batch] = [];
-      acc[inst][dept][batch].push(cred);
-      
-      return acc;
-    }, {})
-  );
-
-  // Revocation Tab Filter
+  // Revocation Tab Data
   const filteredRevocationCreds = credentials.filter(cred => {
     if (!revokeSearchQuery) return true;
     const q = revokeSearchQuery.toLowerCase();
     return (
       cred.studentName?.toLowerCase().includes(q) ||
       cred.degreeTitle?.toLowerCase().includes(q) ||
-      cred.department?.toLowerCase().includes(q)
+      cred.department?.toLowerCase().includes(q) ||
+      cred.institutionName?.toLowerCase().includes(q)
     );
   });
+  const groupedRevocations = groupCredentials(filteredRevocationCreds);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 py-6 font-sans">
@@ -500,7 +533,7 @@ export default function IssuerPortal() {
                 <p>Institutions</p>
               </div>
               <div className="bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg border border-emerald-100 text-center">
-                <p className="font-bold text-base">{filteredCredentials.length}</p>
+                <p className="font-bold text-base">{filteredHistoryCreds.length}</p>
                 <p>Total Records</p>
               </div>
             </div>
@@ -625,54 +658,203 @@ export default function IssuerPortal() {
         </div>
       )}
 
-      {/* REVOCATION TAB (WITH SEARCH) */}
+      {/* REVOCATION TAB (3-LEVEL ACCORDION) */}
       {activeTab === "revocation" && (
-        <div className="space-y-4">
-          {/* REVOKE SEARCH BAR */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <input
-              type="text"
-              placeholder="Search student to revoke..."
-              value={revokeSearchQuery}
-              onChange={(e) => setRevokeSearchQuery(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-            />
+        <div className="space-y-6">
+          {/* SEARCH & STATS BAR */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <div className="w-full sm:w-1/2">
+              <input
+                type="text"
+                placeholder="Search university, student, degree, or department..."
+                value={revokeSearchQuery}
+                onChange={(e) => setRevokeSearchQuery(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+              />
+            </div>
+            <div className="flex gap-4 text-xs">
+              <div className="bg-rose-50 text-rose-700 px-3 py-2 rounded-lg border border-rose-100 text-center">
+                <p className="font-bold text-base">{groupedRevocations.length}</p>
+                <p>Institutions</p>
+              </div>
+              <div className="bg-slate-100 text-slate-700 px-3 py-2 rounded-lg border border-slate-200 text-center">
+                <p className="font-bold text-base">{filteredRevocationCreds.length}</p>
+                <p>Total Records</p>
+              </div>
+            </div>
           </div>
 
           {isLoadingHistory ? (
             <p className="text-slate-500 text-center py-12 text-sm">Loading active credentials...</p>
-          ) : filteredRevocationCreds.length === 0 ? (
+          ) : groupedRevocations.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
-               <p className="text-slate-500 text-sm">No credentials found matching your search.</p>
+               <p className="text-slate-500 text-sm">No records found matching your search.</p>
             </div>
           ) : (
-            filteredRevocationCreds.map((cred, i) => (
-              <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center gap-4">
-                <div className="space-y-1">
-                  <p className="font-medium text-slate-900 text-sm">{cred.studentName}</p>
-                  <p className="text-slate-500 text-xs">{cred.degreeTitle} • {cred.institutionName || 'N/A'} • {cred.department || 'General'}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => navigate(`/verify?merkleRoot=${cred.merkleRoot}&leaf=${cred.leafHash}&proof=${cred.proof.join(',')}`)}
-                    className="bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm transition-colors border border-slate-300"
-                  >
-                    Verify
-                  </button>
-                  {cred.revoked ? (
-                    <span className="text-xs font-medium bg-rose-50 text-rose-700 px-3 py-1.5 rounded-lg border border-rose-200">Revoked</span>
-                  ) : (
-                    <button
-                      onClick={() => handleRevoke(cred)}
-                      className="bg-white hover:bg-rose-50 text-rose-700 font-medium px-3.5 py-1.5 rounded-lg text-sm border border-rose-200 transition-colors"
+            <div className="space-y-4">
+              {/* LEVEL 1: INSTITUTION */}
+              {groupedRevocations.map(([instName, departments]) => {
+                const isInstExpanded = expandedInst === instName;
+                const totalRecordsInInst = Object.values(departments).flat().flat().length;
+
+                return (
+                  <div key={instName} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                    <div 
+                      onClick={() => setExpandedInst(isInstExpanded ? null : instName)}
+                      className="p-5 flex justify-between items-center cursor-pointer hover:bg-slate-50 transition-colors"
                     >
-                      Revoke
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+                      <div className="space-y-1">
+                        <h3 className="text-lg font-semibold text-slate-900">{instName}</h3>
+                        <p className="text-sm text-slate-500">{totalRecordsInInst} Total Record(s)</p>
+                      </div>
+                      <button className="text-slate-400 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white">
+                        {isInstExpanded ? "Hide" : "View"}
+                      </button>
+                    </div>
+
+                    {/* LEVEL 2: DEPARTMENTS */}
+                    {isInstExpanded && (
+                      <div className="bg-slate-50 border-t border-slate-200 p-5 space-y-4">
+                        {Object.entries(departments).map(([deptName, batches]) => {
+                          const isDeptExpanded = expandedDept === `${instName}-${deptName}`;
+                          const totalRecordsInDept = Object.values(batches).flat().length;
+
+                          return (
+                            <div key={deptName} className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                              <div 
+                                onClick={() => setExpandedDept(isDeptExpanded ? null : `${instName}-${deptName}`)}
+                                className="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-50 transition-colors"
+                              >
+                                <div className="space-y-1">
+                                  <h4 className="text-md font-semibold text-indigo-700">{deptName}</h4>
+                                  <p className="text-xs text-slate-500">{totalRecordsInDept} Record(s)</p>
+                                </div>
+                                <button className="text-slate-400 text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 bg-white">
+                                  {isDeptExpanded ? "Hide" : "View"}
+                                </button>
+                              </div>
+
+                              {/* LEVEL 3: BATCHES */}
+                              {isDeptExpanded && (
+                                <div className="bg-white border-t border-slate-200 p-4 space-y-3">
+                                  {Object.entries(batches).map(([merkleRoot, students]) => {
+                                    const isBatchExpanded = expandedBatch === merkleRoot;
+                                    return (
+                                      <div key={merkleRoot} className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                                        <div 
+                                          onClick={() => setExpandedBatch(isBatchExpanded ? null : merkleRoot)}
+                                          className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors"
+                                        >
+                                          <div className="space-y-1">
+                                            <span className="text-xs font-mono font-medium bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                                              Batch ID: {formatAddress(merkleRoot)}
+                                            </span>
+                                            <p className="text-sm text-slate-800 font-medium mt-1">
+                                              {students.length} Record(s) in this batch
+                                            </p>
+                                          </div>
+                                          <button className="text-slate-400 text-xs font-medium px-2.5 py-1.5 rounded-md border border-slate-200 bg-white">
+                                            {isBatchExpanded ? "Hide Students" : "View Students"}
+                                          </button>
+                                        </div>
+
+                                        {/* LEVEL 4: STUDENTS */}
+                                        {isBatchExpanded && (
+                                          <div className="bg-white border-t border-slate-200 p-3 space-y-2">
+                                            {students.map((cred, idx) => (
+                                              <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center">
+                                                <div>
+                                                  <p className="font-medium text-slate-900 text-sm">{cred.studentName}</p>
+                                                  <p className="text-slate-500 text-xs">{cred.degreeTitle}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  <button
+                                                    onClick={() => navigate(`/verify?merkleRoot=${cred.merkleRoot}&leaf=${cred.leafHash}&proof=${cred.proof.join(',')}`)}
+                                                    className="text-indigo-600 font-medium hover:underline text-sm"
+                                                  >
+                                                    Verify
+                                                  </button>
+                                                  {cred.revoked ? (
+                                                    <span className="text-xs font-medium bg-rose-50 text-rose-700 px-3 py-1.5 rounded-lg border border-rose-200">Revoked</span>
+                                                  ) : (
+                                                    <button
+                                                      onClick={() => setRevokeTarget(cred)}
+                                                      className="bg-white hover:bg-rose-50 text-rose-700 font-medium px-3.5 py-1.5 rounded-lg text-sm border border-rose-200 transition-colors"
+                                                    >
+                                                      Revoke
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
+        </div>
+      )}
+
+      {/* REVOCATION MODAL */}
+      {revokeTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-8 max-w-md w-full space-y-6 shadow-xl">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wider bg-rose-50 text-rose-700 px-2.5 py-1 rounded border border-rose-200">
+                Irreversible Action
+              </span>
+              <h3 className="text-lg font-semibold text-slate-900">Revoke Credential</h3>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                You are about to permanently invalidate the credential for <span className="font-semibold text-slate-900">{revokeTarget.studentName}</span>.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+              <label htmlFor="confirmText" className="block text-xs text-slate-500 font-medium">
+                To confirm, type <span className="font-mono font-semibold text-rose-600">CONFIRM</span> below:
+              </label>
+              <input
+                id="confirmText"
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="CONFIRM"
+                className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setRevokeTarget(null);
+                  setConfirmText("");
+                }}
+                className="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-medium py-2.5 rounded-lg text-sm transition-colors border border-slate-300"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleRevoke}
+                disabled={confirmText !== "CONFIRM" || status === "pending"}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm transition-colors shadow-sm"
+              >
+                {status === "pending" ? "Revoking..." : "Revoke Credential"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
