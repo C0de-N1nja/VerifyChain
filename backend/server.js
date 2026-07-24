@@ -172,95 +172,207 @@ app.post('/api/issuer/prepare-batch-csv', upload.single('file'), (req, res) => {
 });
 
 // Issuer Portal: Confirmation & Delivery Routes
+// app.post('/api/issuer/confirm-batch', async (req, res) => {
+// 	try {
+// 		const { merkleRoot, credentials } = req.body;
+
+// 		if (!merkleRoot || !credentials || !Array.isArray(credentials)) {
+// 			return res.status(400).json({ error: 'merkleRoot and credentials are required' });
+// 		}
+
+// 		const batch = await credentialRegistry.getBatch(merkleRoot);
+
+// 		if (batch.issuer === '0x0000000000000000000000000000000000000000') {
+// 			return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
+// 		}
+
+// 		const results = [];
+// 		const failedEmails = [];
+
+// 		for (const item of credentials) {
+// 			const { credential, leaf, proof } = item;
+
+// 			const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
+// 			if (!isValid) {
+// 				console.warn(`Proof verification returned false for leaf: ${leaf}`);
+// 				continue;
+// 			}
+
+// 			try {
+// 				await Credential.create({
+// 					studentName: credential.studentName,
+// 					degreeTitle: credential.degreeTitle,
+// 					email: credential.email || undefined,
+// 					issuerAddress: batch.issuer,
+// 					merkleRoot: merkleRoot,
+// 					leafHash: leaf,
+// 					proof: proof || []
+// 				});
+// 			} catch (dbErr) {
+// 				if (dbErr.code === 11000) {
+// 					console.warn(`Credential ${leaf} already indexed, skipping duplicate write.`);
+// 				} else {
+// 					console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
+// 				}
+// 			}
+
+// 			const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
+// 			let emailed = false;
+
+// 			if (credential.email) {
+// 				emailed = await sendWithRetry(credential.email, credential.studentName, pdfBytes);
+// 				if (!emailed) {
+// 					failedEmails.push({ studentName: credential.studentName, pdfBytes });
+// 				}
+// 			}
+
+// 			results.push({ credential, leaf, proof, emailed });
+// 		}
+
+// 		let zipDownloadUrl = null;
+
+// 		if (failedEmails.length > 0) {
+// 			const zipFileName = `failed-certs-${Date.now()}.zip`;
+// 			const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
+
+// 			if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
+// 				fs.mkdirSync(path.join(__dirname, 'temp-zips'));
+// 			}
+
+// 			await new Promise((resolve, reject) => {
+// 				const output = fs.createWriteStream(zipPath);
+// 				const archive = new ZipArchive({ zlib: { level: 9 } });
+
+// 				output.on('close', resolve);
+// 				archive.on('error', reject);
+// 				archive.pipe(output);
+
+// 				failedEmails.forEach(item => {
+// 					archive.append(Buffer.from(item.pdfBytes), { name: `${item.studentName}-certificate.pdf` });
+// 				});
+
+// 				archive.finalize();
+// 			});
+
+// 			zipDownloadUrl = `/api/issuer/download-zip/${zipFileName}`;
+// 		}
+
+// 		res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl });
+// 	} catch (error) {
+// 		res.status(500).json({ error: error.message });
+// 	}
+// });
+
+// Issuer Portal: Confirmation & Delivery Routes
 app.post('/api/issuer/confirm-batch', async (req, res) => {
-	try {
-		const { merkleRoot, credentials } = req.body;
+    try {
+        const { merkleRoot, credentials } = req.body;
 
-		if (!merkleRoot || !credentials || !Array.isArray(credentials)) {
-			return res.status(400).json({ error: 'merkleRoot and credentials are required' });
-		}
+        if (!merkleRoot || !credentials || !Array.isArray(credentials)) {
+            return res.status(400).json({ error: 'merkleRoot and credentials are required' });
+        }
 
-		const batch = await credentialRegistry.getBatch(merkleRoot);
+        const batch = await credentialRegistry.getBatch(merkleRoot);
 
-		if (batch.issuer === '0x0000000000000000000000000000000000000000') {
-			return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
-		}
+        if (batch.issuer === '0x0000000000000000000000000000000000000000') {
+            return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
+        }
 
-		const results = [];
-		const failedEmails = [];
+        // 1. Rebuild the Merkle Tree on the backend to guarantee we have correct proofs
+        const rawCredentials = credentials.map(item => item.credential);
+        const { tree, leaves, root } = buildMerkleTree(rawCredentials);
 
-		for (const item of credentials) {
-			const { credential, leaf, proof } = item;
+        if (root !== merkleRoot) {
+            return res.status(400).json({ error: 'Merkle root mismatch. The credentials do not match the issued batch.' });
+        }
 
-			const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
-			if (!isValid) {
-				console.warn(`Proof verification returned false for leaf: ${leaf}`);
-				continue;
-			}
+        const results = [];
+        const failedEmails = [];
 
-			try {
-				await Credential.create({
-					studentName: credential.studentName,
-					degreeTitle: credential.degreeTitle,
-					email: credential.email || undefined,
-					issuerAddress: batch.issuer,
-					merkleRoot: merkleRoot,
-					leafHash: leaf,
-					proof: proof || []
-				});
-			} catch (dbErr) {
-				if (dbErr.code === 11000) {
-					console.warn(`Credential ${leaf} already indexed, skipping duplicate write.`);
-				} else {
-					console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
-				}
-			}
+        for (let i = 0; i < rawCredentials.length; i++) {
+            const credential = rawCredentials[i];
+            const leaf = '0x' + leaves[i].toString('hex');
+            const proof = tree.getHexProof(leaves[i]);
 
-			const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
-			let emailed = false;
+            const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
+            if (!isValid) {
+                console.warn(`Proof verification returned false for leaf: ${leaf}`);
+                continue;
+            }
 
-			if (credential.email) {
-				emailed = await sendWithRetry(credential.email, credential.studentName, pdfBytes);
-				if (!emailed) {
-					failedEmails.push({ studentName: credential.studentName, pdfBytes });
-				}
-			}
+            let alreadyExists = false;
+            try {
+                // 2. Save to Database with the correct proof
+                await Credential.create({
+                    studentName: credential.studentName,
+                    degreeTitle: credential.degreeTitle,
+                    email: credential.email || undefined,
+                    issuerAddress: batch.issuer,
+                    merkleRoot: merkleRoot,
+                    leafHash: leaf,
+                    proof: proof
+                });
+            } catch (dbErr) {
+                if (dbErr.code === 11000) {
+                    console.warn(`Credential ${leaf} already indexed, updating missing proof...`);
+                    // 3. FIX EXISTING RECORDS: Update the proof if it was missing
+                    await Credential.updateOne({ leafHash: leaf }, { $set: { proof: proof } });
+                    alreadyExists = true;
+                } else {
+                    console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
+                }
+            }
 
-			results.push({ credential, leaf, proof, emailed });
-		}
+            // 4. Only send email if it's a brand new credential
+            if (!alreadyExists) {
+                const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
+                let emailed = false;
 
-		let zipDownloadUrl = null;
+                if (credential.email) {
+                    emailed = await sendWithRetry(credential.email, credential.studentName, pdfBytes);
+                    if (!emailed) {
+                        failedEmails.push({ studentName: credential.studentName, pdfBytes });
+                    }
+                }
 
-		if (failedEmails.length > 0) {
-			const zipFileName = `failed-certs-${Date.now()}.zip`;
-			const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
+                results.push({ credential, leaf, proof, emailed });
+            } else {
+                results.push({ credential, leaf, proof, emailed: false, skipped: true });
+            }
+        }
 
-			if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
-				fs.mkdirSync(path.join(__dirname, 'temp-zips'));
-			}
+        let zipDownloadUrl = null;
 
-			await new Promise((resolve, reject) => {
-				const output = fs.createWriteStream(zipPath);
-				const archive = new ZipArchive({ zlib: { level: 9 } });
+        if (failedEmails.length > 0) {
+            const zipFileName = `failed-certs-${Date.now()}.zip`;
+            const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
 
-				output.on('close', resolve);
-				archive.on('error', reject);
-				archive.pipe(output);
+            if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
+                fs.mkdirSync(path.join(__dirname, 'temp-zips'));
+            }
 
-				failedEmails.forEach(item => {
-					archive.append(Buffer.from(item.pdfBytes), { name: `${item.studentName}-certificate.pdf` });
-				});
+            await new Promise((resolve, reject) => {
+                const output = fs.createWriteStream(zipPath);
+                const archive = new ZipArchive({ zlib: { level: 9 } });
 
-				archive.finalize();
-			});
+                output.on('close', resolve);
+                archive.on('error', reject);
+                archive.pipe(output);
 
-			zipDownloadUrl = `/api/issuer/download-zip/${zipFileName}`;
-		}
+                failedEmails.forEach(item => {
+                    archive.append(Buffer.from(item.pdfBytes), { name: `${item.studentName}-certificate.pdf` });
+                });
 
-		res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl });
-	} catch (error) {
-		res.status(500).json({ error: error.message });
-	}
+                archive.finalize();
+            });
+
+            zipDownloadUrl = `/api/issuer/download-zip/${zipFileName}`;
+        }
+
+        res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 app.post('/api/issuer/confirm-revocation', async (req, res) => {
@@ -278,10 +390,15 @@ app.post('/api/issuer/confirm-revocation', async (req, res) => {
 		}
 
 		try {
-			await Credential.findOneAndUpdate(
-				{ leafHash: leafHash.toLowerCase() },
-				{ revoked: true, revokedAt: new Date() }
-			);
+			await Credential.create({
+				studentName: credential.studentName,
+				degreeTitle: credential.degreeTitle,
+				email: credential.email || undefined,
+				issuerAddress: batch.issuer,
+				merkleRoot: merkleRoot,
+				leafHash: leaf,
+				proof: proof || []
+			});
 		} catch (dbErr) {
 			console.error(`Mongo update failed for revoked leaf ${leafHash}:`, dbErr.message);
 		}
