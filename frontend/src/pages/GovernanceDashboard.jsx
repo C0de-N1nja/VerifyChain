@@ -25,6 +25,9 @@ export default function GovernanceDashboard() {
   const [institutionAddress, setInstitutionAddress] = useState("");
   const [selectedTier, setSelectedTier] = useState(1);
 
+  // Approval Modal State
+  const [approvalTarget, setApprovalTarget] = useState(null);
+
   // 1. Fetch Registered Board Members & Proposals
   useEffect(() => {
     const fetchGovernanceData = async () => {
@@ -33,7 +36,6 @@ export default function GovernanceDashboard() {
         const governanceBoardRead = getFreshContract("governanceBoard", false);
         if (!governanceBoardRead) return;
 
-        // Fetch official board member addresses
         const members = [];
         for (let m = 0; m < 3; m++) {
           try {
@@ -45,7 +47,6 @@ export default function GovernanceDashboard() {
         }
         setBoardMembersList(members);
 
-        // Fetch pending proposals
         const tempProposals = [];
         const zeroAddress = "0x0000000000000000000000000000000000000000";
 
@@ -113,14 +114,14 @@ export default function GovernanceDashboard() {
   }, [activeTab, status]);
 
   if (role.isLoading)
-    return <div className="text-center text-slate-500 py-20 text-xs font-medium">Verifying governance credentials...</div>;
+    return <div className="text-center text-slate-500 py-20 text-sm font-medium">Verifying governance credentials...</div>;
 
   if (!role.isGovernanceMember) {
     return (
-      <div className="max-w-md mx-auto my-12 text-center space-y-4 modern-glass-card p-8 rounded-3xl border border-slate-200">
-        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
-        <p className="text-slate-600 text-xs">
-          Your connected wallet address ({formatAddress(address)}) is not a registered Governance Board member.
+      <div className="max-w-md mx-auto my-12 text-center space-y-4 bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-900">Access Restricted</h2>
+        <p className="text-slate-600 text-sm">
+          Your connected account ({formatAddress(address)}) is not a registered Governance Board member.
         </p>
       </div>
     );
@@ -146,9 +147,10 @@ export default function GovernanceDashboard() {
       const contract = await getFreshContract("governanceBoard", true);
       await execute(() => contract.approveProposal(proposalId));
       setToast({
-        message: "Proposal approved. Issuer activated on-chain.",
+        message: "Institution authorized successfully.",
         type: "success",
       });
+      setApprovalTarget(null);
     } catch (err) {
       setToast({
         message: parseError(err) || "Failed to approve proposal.",
@@ -158,7 +160,7 @@ export default function GovernanceDashboard() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 py-4 font-sans">
+    <div className="max-w-5xl mx-auto space-y-8 py-6 font-sans">
       <TransactionOverlay status={status} error={error} onClose={reset} />
       <Toast
         message={toast.message}
@@ -169,77 +171,74 @@ export default function GovernanceDashboard() {
       {/* DASHBOARD HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
         <div>
-          <span className="text-xs font-mono font-bold uppercase text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100">
-            Institutional Control Surface
+          <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100">
+            System Administration
           </span>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mt-1">
-            Governance Board Dashboard
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight mt-2">
+            Governance Dashboard
           </h1>
         </div>
-        <span className="text-xs font-mono font-semibold bg-slate-900 text-white px-3 py-1.5 rounded-lg shadow-sm">
-          Active Account: {formatAddress(address)}
+        <span className="text-xs font-medium text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+          Signed in as: <span className="font-mono text-slate-800">{formatAddress(address)}</span>
         </span>
       </div>
 
+      {/* METRICS BANNER */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
+          <p className="text-sm font-medium text-slate-500">Pending Approvals</p>
+          <p className="text-3xl font-bold text-slate-900">{proposals.length}</p>
+          <p className="text-xs text-slate-400">Institutions awaiting review</p>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
+          <p className="text-sm font-medium text-slate-500">Active Institutions</p>
+          <p className="text-3xl font-bold text-indigo-600">{activeIssuers.length}</p>
+          <p className="text-xs text-slate-400">Authorized to issue credentials</p>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
+          <p className="text-sm font-medium text-slate-500">Approval Requirement</p>
+          <p className="text-3xl font-bold text-emerald-600">2 of 3</p>
+          <p className="text-xs text-slate-400">Votes needed to authorize</p>
+        </div>
+      </div>
+
       {/* REGISTERED BOARD MEMBERS PANEL */}
-      <div className="bg-indigo-50/70 border border-indigo-100 p-4 rounded-2xl space-y-2">
-        <p className="text-xs font-bold text-indigo-900 uppercase tracking-wider">
-          On-Chain Registered Board Member Wallets:
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 font-mono text-xs">
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <p className="text-sm font-semibold text-slate-800">Authorized Board Members</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {boardMembersList.map((mem, idx) => {
             const isYou = mem.toLowerCase() === address.toLowerCase();
             return (
               <div
                 key={idx}
-                className={`p-2 rounded-xl border text-center font-bold ${
+                className={`p-3 rounded-lg border text-sm flex items-center justify-between ${
                   isYou
-                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                    : "bg-white text-slate-700 border-slate-200"
+                    ? "bg-indigo-50 border-indigo-200 text-indigo-900"
+                    : "bg-slate-50 border-slate-200 text-slate-700"
                 }`}
               >
-                Member {idx + 1}: {formatAddress(mem)} {isYou && "(Selected)"}
+                <span className="font-medium">Member {idx + 1}</span>
+                <span className="font-mono text-xs">{formatAddress(mem)}</span>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* METRICS TOP BANNER */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="modern-glass-card p-5 rounded-2xl border border-slate-200/80 space-y-1">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Approvals</p>
-          <p className="text-2xl font-extrabold font-mono text-slate-900">{proposals.length}</p>
-          <p className="text-[11px] text-slate-400">Proposals waiting for quorum</p>
-        </div>
-
-        <div className="modern-glass-card p-5 rounded-2xl border border-slate-200/80 space-y-1">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Issuers</p>
-          <p className="text-2xl font-extrabold font-mono text-indigo-600">{activeIssuers.length}</p>
-          <p className="text-[11px] text-slate-400">Whitelisted institutions on-chain</p>
-        </div>
-
-        <div className="modern-glass-card p-5 rounded-2xl border border-slate-200/80 space-y-1">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Multi-Sig Threshold</p>
-          <p className="text-2xl font-extrabold font-mono text-emerald-600">2 of 3</p>
-          <p className="text-[11px] text-slate-400">Quorum vote requirement</p>
-        </div>
-      </div>
-
       {/* TABS NAVIGATION */}
-      <div className="flex gap-2 border-b border-slate-200 pb-1">
+      <div className="flex gap-6 border-b border-slate-200">
         {[
-          { id: "pending", label: "Pending Proposals" },
-          { id: "submit", label: "Submit New Proposal" },
-          { id: "active", label: "Active Issuers Registry" },
+          { id: "pending", label: "Pending Approvals" },
+          { id: "submit", label: "Add Institution" },
+          { id: "active", label: "Active Registry" },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            className={`px-1 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === tab.id
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
-                : "text-slate-600 hover:bg-slate-100"
+                ? "border-indigo-600 text-indigo-600"
+                : "border-transparent text-slate-500 hover:text-slate-900"
             }`}
           >
             {tab.label}
@@ -249,39 +248,40 @@ export default function GovernanceDashboard() {
 
       {/* SUBMIT PROPOSAL TAB */}
       {activeTab === "submit" && (
-        <div className="modern-glass-card p-8 rounded-3xl space-y-6 border border-slate-200">
+        <div className="bg-white p-8 rounded-xl space-y-6 border border-slate-200 shadow-sm">
           <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900">Onboard New Institution</h3>
-            <p className="text-slate-500 text-xs">
-              Submit a governance proposal to whitelist an institution wallet address on-chain.
+            <h3 className="text-lg font-semibold text-slate-900">Add New Institution</h3>
+            <p className="text-slate-500 text-sm">
+              Submit a proposal to authorize a new institution to issue credentials.
             </p>
           </div>
 
-          <form onSubmit={handleSubmitProposal} className="space-y-5">
-            <div className="space-y-1">
-              <label className="block text-xs font-bold uppercase text-slate-700">
-                Institution Wallet Address
+          <form onSubmit={handleSubmitProposal} className="space-y-6">
+            <div className="space-y-1.5">
+              <label htmlFor="instAddr" className="block text-sm font-medium text-slate-700">
+                Institution Account Address
               </label>
               <input
+                id="instAddr"
                 type="text"
                 value={institutionAddress}
                 onChange={(e) => setInstitutionAddress(e.target.value)}
                 placeholder="0x..."
                 required
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-xs text-slate-900 font-mono focus:outline-none focus:border-indigo-600"
+                className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase text-slate-700">
-                Authorized Issuer Tier
+              <label className="block text-sm font-medium text-slate-700">
+                Authorization Type
               </label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label
-                  className={`p-4 rounded-2xl border cursor-pointer flex flex-col justify-between transition-all ${
+                  className={`p-4 rounded-lg border cursor-pointer flex flex-col justify-between transition-colors ${
                     selectedTier === 1
-                      ? "bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20"
-                      : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                      ? "bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500"
+                      : "bg-white border-slate-300 hover:border-slate-400"
                   }`}
                 >
                   <input
@@ -290,19 +290,19 @@ export default function GovernanceDashboard() {
                     value={1}
                     checked={selectedTier === 1}
                     onChange={() => setSelectedTier(1)}
-                    className="hidden"
+                    className="sr-only"
                   />
-                  <span className="text-xs font-bold text-slate-900">Tier 1: Academic Degree Issuer</span>
-                  <span className="text-[11px] text-slate-500 mt-2">
-                    Authorized for permanent academic degrees with zero expiration.
+                  <span className="text-sm font-semibold text-slate-900">Academic Degree Issuer</span>
+                  <span className="text-xs text-slate-500 mt-2">
+                    Authorized for permanent academic degrees (e.g., BSc, MSc, PhD).
                   </span>
                 </label>
 
                 <label
-                  className={`p-4 rounded-2xl border cursor-pointer flex flex-col justify-between transition-all ${
+                  className={`p-4 rounded-lg border cursor-pointer flex flex-col justify-between transition-colors ${
                     selectedTier === 2
-                      ? "bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20"
-                      : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                      ? "bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500"
+                      : "bg-white border-slate-300 hover:border-slate-400"
                   }`}
                 >
                   <input
@@ -311,11 +311,11 @@ export default function GovernanceDashboard() {
                     value={2}
                     checked={selectedTier === 2}
                     onChange={() => setSelectedTier(2)}
-                    className="hidden"
+                    className="sr-only"
                   />
-                  <span className="text-xs font-bold text-slate-900">Tier 2: Professional Certification</span>
-                  <span className="text-[11px] text-slate-500 mt-2">
-                    Authorized for professional credentials requiring mandatory expiration dates.
+                  <span className="text-sm font-semibold text-slate-900">Professional Certification</span>
+                  <span className="text-xs text-slate-500 mt-2">
+                    Authorized for time-bound professional credentials and certificates.
                   </span>
                 </label>
               </div>
@@ -324,9 +324,9 @@ export default function GovernanceDashboard() {
             <button
               type="submit"
               disabled={status === "pending"}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600"
             >
-              {status === "pending" ? "Executing Transaction..." : "Submit Onboarding Proposal"}
+              {status === "pending" ? "Submitting Proposal..." : "Submit for Approval"}
             </button>
           </form>
         </div>
@@ -336,11 +336,11 @@ export default function GovernanceDashboard() {
       {activeTab === "pending" && (
         <div className="space-y-4">
           {isLoadingProposals ? (
-            <p className="text-slate-500 text-center py-12 text-xs">Loading active proposals...</p>
+            <p className="text-slate-500 text-center py-12 text-sm">Loading pending proposals...</p>
           ) : proposals.length === 0 ? (
-            <div className="text-center py-16 modern-glass-card rounded-3xl border border-slate-200 space-y-2">
-              <h3 className="text-sm font-bold text-slate-800">No Pending Proposals</h3>
-              <p className="text-slate-500 text-xs">There are no onboarding proposals currently waiting for multi-sig approval.</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+              <h3 className="text-sm font-semibold text-slate-800">No Pending Approvals</h3>
+              <p className="text-slate-500 text-sm mt-1">There are no institutions awaiting authorization.</p>
             </div>
           ) : (
             proposals.map((p) => {
@@ -349,46 +349,46 @@ export default function GovernanceDashboard() {
               return (
                 <div
                   key={p.id}
-                  className="modern-glass-card p-6 rounded-2xl border border-slate-200 space-y-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                        Proposal #{p.id}
+                      <span className="text-xs font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                        Request #{p.id}
                       </span>
                       <span
-                        className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                        className={`text-xs font-medium px-2 py-0.5 rounded ${
                           p.tier === 1
-                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                            : "bg-purple-50 text-purple-700 border border-purple-200"
+                            ? "bg-indigo-50 text-indigo-700"
+                            : "bg-slate-100 text-slate-700"
                         }`}
                       >
-                        Tier {p.tier} {p.tier === 1 ? "Academic" : "Professional"}
+                        {p.tier === 1 ? "Academic" : "Professional"}
                       </span>
                     </div>
 
-                    <p className="font-mono text-xs font-bold text-slate-900">
-                      Institution: {formatAddress(p.institution)}
+                    <p className="text-sm text-slate-900">
+                      Institution: <span className="font-mono font-medium">{formatAddress(p.institution)}</span>
                     </p>
 
                     <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span>Proposed by: {formatAddress(p.proposedBy)}</span>
+                      <span>Requested by: {formatAddress(p.proposedBy)}</span>
                       <span>•</span>
-                      <span className="font-semibold text-indigo-600">Current Votes: {p.approvalCount} / 2</span>
+                      <span className="font-medium text-slate-700">Approvals: {p.approvalCount} / 2</span>
                     </div>
                   </div>
 
                   {isSubmitter ? (
-                    <span className="text-xs font-mono font-semibold bg-amber-50 text-amber-700 px-4 py-2 rounded-xl border border-amber-200">
-                      Voted (Submitted by You)
+                    <span className="text-xs font-medium bg-amber-50 text-amber-700 px-4 py-2 rounded-lg border border-amber-200 whitespace-nowrap">
+                      Awaiting other votes
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleApprove(p.id)}
+                      onClick={() => setApprovalTarget(p)}
                       disabled={status === "pending"}
-                      className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-2.5 px-6 rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 whitespace-nowrap"
+                      className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-2.5 px-6 rounded-lg text-sm transition-colors shadow-sm whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600"
                     >
-                      Approve Proposal
+                      Review & Approve
                     </button>
                   )}
                 </div>
@@ -400,44 +400,86 @@ export default function GovernanceDashboard() {
 
       {/* ACTIVE ISSUERS REGISTRY TAB */}
       {activeTab === "active" && (
-        <div className="modern-glass-card rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           {isLoadingActive ? (
-            <p className="text-slate-500 text-center py-12 text-xs">Loading active issuers...</p>
+            <p className="text-slate-500 text-center py-12 text-sm">Loading active institutions...</p>
           ) : activeIssuers.length === 0 ? (
-            <div className="text-center py-16 space-y-2">
-              <h3 className="text-sm font-bold text-slate-800">Registry Empty</h3>
-              <p className="text-slate-500 text-xs">No institutions have been activated on-chain yet.</p>
+            <div className="text-center py-12 space-y-1">
+              <h3 className="text-sm font-semibold text-slate-800">Registry is Empty</h3>
+              <p className="text-slate-500 text-sm">No institutions have been authorized yet.</p>
             </div>
           ) : (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-                  <th className="p-4">Institution Address</th>
-                  <th className="p-4">Tier Authorization</th>
-                  <th className="p-4 text-right">Block Number</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-mono">
-                {activeIssuers.map((issuer, i) => (
-                  <tr key={i} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-4 font-bold text-slate-900">{formatAddress(issuer.address)}</td>
-                    <td className="p-4 font-sans">
-                      <span
-                        className={`text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded ${
-                          issuer.tier === 1
-                            ? "bg-blue-50 text-blue-700 border border-blue-200"
-                            : "bg-purple-50 text-purple-700 border border-purple-200"
-                        }`}
-                      >
-                        Tier {issuer.tier} {issuer.tier === 1 ? "Academic" : "Professional"}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right text-slate-500">#{issuer.blockNumber}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs font-semibold uppercase tracking-wider">
+                    <th className="p-4">Institution Address</th>
+                    <th className="p-4">Authorization Type</th>
+                    <th className="p-4 text-right">Registered (Block)</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {activeIssuers.map((issuer, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 font-mono text-slate-900">{formatAddress(issuer.address)}</td>
+                      <td className="p-4">
+                        <span
+                          className={`text-xs font-medium px-2.5 py-0.5 rounded ${
+                            issuer.tier === 1
+                              ? "bg-indigo-50 text-indigo-700"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {issuer.tier === 1 ? "Academic" : "Professional"}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right text-slate-500 font-mono text-xs">#{issuer.blockNumber}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
+        </div>
+      )}
+
+      {/* APPROVAL CONFIRMATION MODAL */}
+      {approvalTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-8 max-w-md w-full space-y-6 shadow-xl">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded border border-indigo-200">
+                Confirmation Required
+              </span>
+              <h3 className="text-lg font-semibold text-slate-900">Authorize Institution</h3>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                You are about to authorize this institution to issue academic credentials. This action is irreversible.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2 text-sm">
+               <div className="flex justify-between"><span className="text-slate-500">Request ID:</span><span className="font-medium text-slate-900">#{approvalTarget.id}</span></div>
+               <div className="flex justify-between"><span className="text-slate-500">Institution:</span><span className="font-mono text-xs text-slate-900">{formatAddress(approvalTarget.institution)}</span></div>
+               <div className="flex justify-between"><span className="text-slate-500">Type:</span><span className="font-medium text-slate-900">{approvalTarget.tier === 1 ? "Academic" : "Professional"}</span></div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setApprovalTarget(null)}
+                className="flex-1 bg-white hover:bg-slate-50 text-slate-700 font-medium py-2.5 rounded-lg text-sm transition-colors border border-slate-300"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={() => handleApprove(approvalTarget.id)}
+                disabled={status === "pending"}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm transition-colors shadow-sm"
+              >
+                {status === "pending" ? "Authorizing..." : "Confirm Authorization"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
