@@ -13,11 +13,12 @@ const { ethers } = require('ethers');
 const { credentialRegistry } = require('./blockchain.js');
 const { buildMerkleTree } = require('./merkle.js');
 const { generateCertificate } = require('./certificate.js');
-const { sendWithRetry, startEmailQueueProcessor } = require('./mailer.js');
+const { sendWithRetry, startEmailQueueProcessor, EmailQueueItem } = require('./mailer.js');
 
 // MONGOOSE SCHEMA
 const credentialSchema = new mongoose.Schema({
-	studentName: { type: String, required: true },
+	rollNumber: { type: String, default: 'N/A' },
+    studentName: { type: String, required: true },
 	degreeTitle: { type: String, required: true },
 	department: { type: String, required: true, default: 'General' },
 	email: { type: String, required: false },
@@ -40,8 +41,10 @@ const upload = multer({ storage: multer.memoryStorage() });
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Increased limit for 1000+ record bulk uploads
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Database Connection & Queue Processor Startup
 async function connectDB() {
@@ -58,43 +61,64 @@ async function connectDB() {
 }
 connectDB();
 
-// 25-STUDENT CSV TEMPLATE ROUTE
+// 46-STUDENT CSV TEMPLATE ROUTE
 app.get('/api/issuer/csv-template', (req, res) => {
-	const header = 'studentName,degreeTitle,department,institutionName,issuerAddress,email,expiryTimestamp\n';
+	const header = 'rollNumber,studentName,degreeTitle,department,institutionName,issuerAddress,email,expiryTimestamp\n';
 	const issuer = '0x19992c2DE1Da16b33bE1Aef78C0f99674A839E70';
 
 	const students = [
-		`Bilal Khan,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},bilal.khan@example.com,0`,
-		`Sumbal Mateen,MS Data Science,Faculty of Computing,FAST National University,${issuer},sumbal.m@example.com,0`,
-		`Usman Tariq,BS Software Engineering,Faculty of Engineering,University of Central Punjab,${issuer},usman.tariq@example.com,0`,
-		`Zainab Imran,BS Information Technology,Faculty of Computing,FAST National University,${issuer},zainab.imran@example.com,0`,
-		`Hamza Sheikh,MS Cybersecurity,Faculty of Law & Security,University of Central Punjab,${issuer},hamza.sheikh@example.com,0`,
-		`Mariam Nadeem,BS Artificial Intelligence,Faculty of Computing,LUMS,${issuer},mariam.n@example.com,0`,
-		`Ali Hassan,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},ali.hassan@example.com,0`,
-		`Hira Aslam,BS Software Engineering,Faculty of Engineering,FAST National University,${issuer},hira.aslam@example.com,0`,
-		`Ahmed Raza,MS Data Science,Faculty of Computing,University of the Punjab,${issuer},ahmed.raza@example.com,0`,
-		`Fatima Noor,BS Information Technology,Faculty of Computing,LUMS,${issuer},fatima.noor@example.com,0`,
-		`Tariq Mehmood,BS Electrical Engineering,Faculty of Engineering,University of Central Punjab,${issuer},tariq.m@example.com,0`,
-		`Sana Saeed,MS Software Engineering,Faculty of Engineering,FAST National University,${issuer},sana.saeed@example.com,0`,
-		`Omar Farooq,BS Computer Science,Faculty of Computing,University of the Punjab,${issuer},omar.farooq@example.com,0`,
-		`Khadija Tariq,BS Artificial Intelligence,Faculty of Computing,University of Central Punjab,${issuer},khadija.t@example.com,0`,
-		`Asad Iqbal,BS Software Engineering,Faculty of Engineering,FAST National University,${issuer},asad.iqbal@example.com,0`,
-		`Nimra Wahab,BS Information Technology,Faculty of Computing,LUMS,${issuer},nimra.w@example.com,0`,
-		`Waqas Ahmad,MS Computer Science,Faculty of Computing,University of the Punjab,${issuer},waqas.ahmad@example.com,0`,
-		`Aiman Malik,BS Data Analytics,Faculty of Business,University of Central Punjab,${issuer},aiman.malik@example.com,0`,
-		`Faisal Shahzad,BS Computer Science,Faculty of Computing,FAST National University,${issuer},faisal.s@example.com,0`,
-		`Rabia Anwar,BS Software Engineering,Faculty of Engineering,LUMS,${issuer},rabia.anwar@example.com,0`,
-		`Daniyal Aziz,BS Information Technology,Faculty of Computing,University of Central Punjab,${issuer},daniyal.aziz@example.com,0`,
-		`Areeba Hashim,MS Data Science,Faculty of Computing,FAST National University,${issuer},areeba.h@example.com,0`,
-		`Zohaib Akram,BS Computer Science,Faculty of Computing,University of the Punjab,${issuer},zohaib.akram@example.com,0`,
-		`Mahnoor Fatima,BS Artificial Intelligence,Faculty of Computing,LUMS,${issuer},mahnoor.f@example.com,0`,
-		`Salman Yousaf,MS Cybersecurity,Faculty of Law & Security,University of Central Punjab,${issuer},salman.y@example.com,0`
+		`G1F22UBSCS091,MUHAMMAD HAMZA AFZAL,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs091@example.com,0`,
+		`G1F22UBSCS093,AZKA TARIQ,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs093@example.com,0`,
+		`G1F22UBSCS094,MUSSA SHAHID,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs094@example.com,0`,
+		`G1F22UBSCS095,MUHAMMAD REHAN RASHID,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs095@example.com,0`,
+		`G1F22UBSCS097,ANAM BUKHARI,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs097@example.com,0`,
+		`G1F22UBSCS099,ABU BAKAR,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs099@example.com,0`,
+		`G1F22UBSCS101,FITTER FATIMA,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs101@example.com,0`,
+		`G1F22UBSCS102,ALEESHAH HAFEEZ,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs102@example.com,0`,
+		`G1F22UBSCS103,HOORIA SHAKEEL,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs103@example.com,0`,
+		`G1F22UBSCS104,ROVAIBA,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs104@example.com,0`,
+		`G1F22UBSCS105,FAJAR IRFAN,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs105@example.com,0`,
+		`G1F22UBSCS109,LAIBA IRFAN,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs109@example.com,0`,
+		`G1F22UBSCS110,TANZILA SHERAZ,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs110@example.com,0`,
+		`G1F22UBSCS113,UM E KALSOOM,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs113@example.com,0`,
+		`G1F22UBSCS115,ZAIN KHALID,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs115@example.com,0`,
+		`G1F22UBSCS116,MUHAMMAD AHMAD NAVEED,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs116@example.com,0`,
+		`G1F22UBSCS117,MUHAMMAD RIAZ ARHAM,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs117@example.com,0`,
+		`G1F22UBSCS118,HAFSA MUSTAFA,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs118@example.com,0`,
+		`G1F22UBSCS119,HAMZA ASGHAR,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs119@example.com,0`,
+		`G1F22UBSCS120,MUHAMMAD HUZAIFA IDREES,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs120@example.com,0`,
+		`G1F22UBSCS121,MUHAMMAD SARMAD SHAFIQ,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs121@example.com,0`,
+		`G1F22UBSCS122,MUHAMMAD AZAN,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs122@example.com,0`,
+		`G1F22UBSCS125,AYESHA IMRAN,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs125@example.com,0`,
+		`G1F22UBSCS126,KINZA ZAFAR,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs126@example.com,0`,
+		`G1F22UBSCS127,HARAM YOUNAS,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs127@example.com,0`,
+		`G1F22UBSCS129,AROOBA AMJAD,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs129@example.com,0`,
+		`G1F22UBSCS130,MUHAMMAD QASIM,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs130@example.com,0`,
+		`G1F22UBSCS131,MUHAMMAD SAAD,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs131@example.com,0`,
+		`G1F22UBSCS132,MADIA SOHAIL,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs132@example.com,0`,
+		`G1F22UBSCS134,MUHAMMAD ALI,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs134@example.com,0`,
+		`G1F22UBSCS135,RANA MUHAMMAD ZAIN UL ABIDEEN,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs135@example.com,0`,
+		`G1F22UBSCS212,USWA WASEEM,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs212@example.com,0`,
+		`G1F22UBSCS213,SUBHAN TAHIR,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs213@example.com,0`,
+		`G1F22UBSCS215,IMAN FATIMA,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs215@example.com,0`,
+		`G1F22UBSCS216,AYESHA IJAZ,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs216@example.com,0`,
+		`G1F22UBSCS217,FARHAT ULLAH,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs217@example.com,0`,
+		`G1F22UBSCS218,LAIBA ARSHAD,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs218@example.com,0`,
+		`G1F22UBSCS219,MUHAMMAD ALI ARIF,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs219@example.com,0`,
+		`G1F22UBSCS220,USMAN ALI,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs220@example.com,0`,
+		`G1F22UBSCS221,AYESHA SADIQA,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs221@example.com,0`,
+		`G1F22UBSCS247,SYED AWAB HAIDER,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs247@example.com,0`,
+		`G1F22UBSCS248,MUHAMMAD SAMI,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs248@example.com,0`,
+		`G1F22UBSCS249,MOMINA SHAHID,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs249@example.com,0`,
+		`G1F22UBSCS250,MUHAMMAD BILAL,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs250@example.com,0`,
+		`G1F22UBSCS251,MUHAMMAD SHOAIB SALEEM,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs251@example.com,0`,
+		`G1F22UBSCS257,ABDUL MOIZ,BS Computer Science,Faculty of Computing,University of Central Punjab,${issuer},g1f22ubscs257@example.com,0`
 	];
 
 	const csvContent = header + students.join('\n') + '\n';
 
 	res.setHeader('Content-Type', 'text/csv');
-	res.setHeader('Content-Disposition', 'attachment; filename="verifychain-25-students-template.csv"');
+	res.setHeader('Content-Disposition', 'attachment; filename="verifychain-class-template.csv"');
 	res.send(csvContent);
 });
 
@@ -107,6 +131,7 @@ app.post('/api/issuer/prepare-batch', (req, res) => {
 		}
 
 		const formattedCredentials = credentials.map(c => ({
+			rollNumber: c.rollNumber ? c.rollNumber.trim() : 'N/A',
 			studentName: c.studentName.trim(),
 			degreeTitle: c.degreeTitle.trim(),
 			department: c.department ? c.department.trim() : 'General',
@@ -154,6 +179,7 @@ app.post('/api/issuer/prepare-batch-csv', upload.single('file'), (req, res) => {
 		}
 
 		const credentials = records.map(row => ({
+			rollNumber: row.rollNumber ? row.rollNumber.trim() : 'N/A',
 			studentName: row.studentName.trim(),
 			degreeTitle: row.degreeTitle.trim(),
 			department: row.department ? row.department.trim() : 'General',
@@ -192,7 +218,6 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 			return res.status(400).json({ error: 'Batch not found on-chain. Has the transaction confirmed yet?' });
 		}
 
-		// 1. Rebuild the Merkle Tree on the backend to guarantee we have correct proofs
 		const rawCredentials = credentials.map(item => item.credential);
 		const { tree, leaves, root } = buildMerkleTree(rawCredentials);
 
@@ -201,23 +226,16 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 		}
 
 		const results = [];
-		const failedEmails = [];
 
 		for (let i = 0; i < rawCredentials.length; i++) {
 			const credential = rawCredentials[i];
 			const leaf = '0x' + leaves[i].toString('hex');
 			const proof = tree.getHexProof(leaves[i]);
 
-			const isValid = await credentialRegistry.verify(merkleRoot, leaf, proof);
-			if (!isValid) {
-				console.warn(`Proof verification returned false for leaf: ${leaf}`);
-				continue;
-			}
-
 			let alreadyExists = false;
 			try {
-				// 2. Save to Database with the correct proof
 				await Credential.create({
+                    rollNumber: credential.rollNumber || 'N/A',
 					studentName: credential.studentName,
 					degreeTitle: credential.degreeTitle,
 					department: credential.department || 'General',
@@ -230,33 +248,32 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 				});
 			} catch (dbErr) {
 				if (dbErr.code === 11000) {
-					console.warn(`Credential ${leaf} already indexed, updating missing proof...`);
-					// 3. FIX EXISTING RECORDS: Update the proof if it was missing
-					await Credential.updateOne(
-						{ leafHash: leaf },
-						{
-							$set: {
-								proof: proof,
-								institutionName: credential.institutionName || '',
-								department: credential.department || 'General'
-							}
-						}
-					);
 					alreadyExists = true;
 				} else {
 					console.error(`Mongo write failed for ${leaf}:`, dbErr.message);
 				}
 			}
 
-			// 4. Only send email if it's a brand new credential
 			if (!alreadyExists) {
-				const pdfBytes = await generateCertificate(credential, merkleRoot, leaf, proof);
 				let emailed = false;
 
 				if (credential.email) {
-					emailed = await sendWithRetry(credential.email, credential.studentName, pdfBytes);
-					if (!emailed) {
-						failedEmails.push({ studentName: credential.studentName, pdfBytes });
+					try {
+						// Queue email in background (NO PDF GENERATION HERE)
+						await EmailQueueItem.create({
+							toEmail: credential.email,
+							studentName: credential.studentName,
+							credential: credential,
+							merkleRoot: merkleRoot,
+							leaf: leaf,
+							proof: proof,
+							attempts: 0,
+							status: 'pending',
+							nextAttemptAt: new Date()
+						});
+						emailed = 'queued';
+					} catch (queueErr) {
+						console.error(`Failed to queue email for ${leaf}:`, queueErr.message);
 					}
 				}
 
@@ -266,35 +283,8 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
 			}
 		}
 
-		let zipDownloadUrl = null;
-
-		if (failedEmails.length > 0) {
-			const zipFileName = `failed-certs-${Date.now()}.zip`;
-			const zipPath = path.join(__dirname, 'temp-zips', zipFileName);
-
-			if (!fs.existsSync(path.join(__dirname, 'temp-zips'))) {
-				fs.mkdirSync(path.join(__dirname, 'temp-zips'));
-			}
-
-			await new Promise((resolve, reject) => {
-				const output = fs.createWriteStream(zipPath);
-				const archive = new ZipArchive({ zlib: { level: 9 } });
-
-				output.on('close', resolve);
-				archive.on('error', reject);
-				archive.pipe(output);
-
-				failedEmails.forEach(item => {
-					archive.append(Buffer.from(item.pdfBytes), { name: `${item.studentName}-certificate.pdf` });
-				});
-
-				archive.finalize();
-			});
-
-			zipDownloadUrl = `/api/issuer/download-zip/${zipFileName}`;
-		}
-
-		res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl });
+		// Respond instantly. The background worker handles the PDFs and SMTP.
+		res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl: null });
 	} catch (error) {
 		res.status(500).json({ error: error.message });
 	}
