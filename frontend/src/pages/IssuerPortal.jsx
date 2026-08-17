@@ -238,7 +238,7 @@ export default function IssuerPortal() {
 			const contract = await getFreshContract("credentialRegistry", true);
 
 			await execute(() =>
-				contract.registerBatch(batchData.merkleRoot, expiryTimestamp, ipfsHash)
+				contract.registerBatch(batchData.merkleRoot, expiryTimestamp)
 			);
 
 			setToast({ message: "Credential registered. Generating certificates...", type: "info" });
