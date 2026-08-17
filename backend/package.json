@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@pinata/sdk": "^2.1.0",
     "archiver": "^8.0.0",
     "cors": "^2.8.6",
     "csv-parse": "^7.0.1",
