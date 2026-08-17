@@ -81,18 +81,28 @@ export default function IssuerPortal() {
 	const fetchDashboardData = async () => {
 		setIsLoadingHistory(true);
 		try {
-			const [histRes, credRes] = await Promise.all([
-				fetch(`${API_URL}/api/issuer/history?issuerAddress=${address}`),
-				fetch(`${API_URL}/api/issuer/credentials?issuerAddress=${address}`),
-			]);
+			const contract = await getFreshContract("credentialRegistry", false);
+			if (contract) {
+				const filter = contract.filters.BatchRegistered(null, address);
+				const events = await contract.queryFilter(filter);
 
-			const histData = await histRes.json();
+				const formattedBatches = events.map(event => ({
+					merkleRoot: event.args.merkleRoot,
+					issuer: event.args.issuer,
+					expiryTimestamp: event.args.expiryTimestamp.toString(),
+					transactionHash: event.transactionHash,
+					blockNumber: event.blockNumber
+				}));
+
+				setHistory(formattedBatches);
+			}
+
+			const credRes = await fetch(`${API_URL}/api/issuer/credentials?issuerAddress=${address}`);
 			const credData = await credRes.json();
 
-			if (histData.batches) setHistory(histData.batches);
 			if (credData.credentials) setCredentials(credData.credentials);
 		} catch (err) {
-			setToast({ message: "Failed to fetch history from backend.", type: "error" });
+			setToast({ message: "Failed to fetch history from blockchain.", type: "error" });
 		} finally {
 			setIsLoadingHistory(false);
 		}
@@ -162,7 +172,7 @@ export default function IssuerPortal() {
 					},
 				],
 			};
-			
+
 			const response = await fetch(`${API_URL}/api/issuer/prepare-batch`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -224,10 +234,11 @@ export default function IssuerPortal() {
 
 		try {
 			const expiryTimestamp = batchData.credentials[0]?.credential?.expiryTimestamp || 0;
+			const ipfsHash = batchData.ipfsHash || "";
 			const contract = await getFreshContract("credentialRegistry", true);
 
 			await execute(() =>
-				contract.registerBatch(batchData.merkleRoot, expiryTimestamp)
+				contract.registerBatch(batchData.merkleRoot, expiryTimestamp, ipfsHash)
 			);
 
 			setToast({ message: "Credential registered. Generating certificates...", type: "info" });
@@ -241,7 +252,6 @@ export default function IssuerPortal() {
 				}),
 			});
 
-			// Safe JSON parsing to prevent "Unexpected token '<'" crashes
 			if (!response.ok) {
 				const text = await response.text();
 				let msg = `Server returned ${response.status}`;
@@ -249,7 +259,6 @@ export default function IssuerPortal() {
 					const errData = JSON.parse(text);
 					msg = errData.error || msg;
 				} catch (e) {
-					// Not JSON, use default message
 				}
 				throw new Error(msg);
 			}
@@ -687,6 +696,36 @@ export default function IssuerPortal() {
 			{/* BATCH HISTORY TAB (3-LEVEL ACCORDION) */}
 			{activeTab === "history" && (
 				<div className="space-y-6">
+					{/* PARTIAL DATABASE BACKUP WARNING */}
+					{!isLoadingHistory && history.length > 0 && (() => {
+						const dbBatchRoots = new Set(credentials.map(c => c.merkleRoot));
+						const unrecoveredBatches = history.filter(b => !dbBatchRoots.has(b.merkleRoot));
+
+						if (unrecoveredBatches.length > 0) {
+							return (
+								<div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2 shadow-sm">
+									<p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Partial Database Backup Detected</p>
+									<p className="text-sm text-amber-800">
+										{unrecoveredBatches.length} batch(es) are verified on the zkSync Blockchain but are missing from the local database.
+									</p>
+									<details className="mt-2">
+										<summary className="text-xs text-amber-700 cursor-pointer font-medium">View Missing Batches</summary>
+										<div className="mt-2 space-y-1">
+											{unrecoveredBatches.map((batch, i) => (
+												<div key={i} className="bg-white p-2 rounded border border-amber-100 flex justify-between items-center">
+													<span className="font-mono text-xs text-slate-700">Batch ID: {formatAddress(batch.merkleRoot)}</span>
+													<span className="text-xs text-slate-500">Block #{batch.blockNumber}</span>
+												</div>
+											))}
+										</div>
+									</details>
+									<p className="text-xs text-amber-600 mt-1">To restore student names for these batches, re-upload the original CSV.</p>
+								</div>
+							);
+						}
+						return null;
+					})()}
+
 					{/* SEARCH & STATS BAR */}
 					<div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center">
 						<div className="w-full sm:w-1/2">
@@ -713,8 +752,25 @@ export default function IssuerPortal() {
 					{isLoadingHistory ? (
 						<p className="text-slate-500 text-center py-12 text-sm">Loading batch history...</p>
 					) : groupedHistory.length === 0 ? (
-						<div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
-							<p className="text-slate-500 text-sm">No records found matching your search.</p>
+						<div className="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-4">
+							<p className="text-slate-500 text-sm">No student records found in backend database.</p>
+
+							{/* BLOCKCHAIN FALLBACK (Proves Decentralization) */}
+							{history.length > 0 ? (
+								<div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-left space-y-2">
+									<p className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Decentralized Backup Active</p>
+									<p className="text-sm text-emerald-800">Database was wiped, but {history.length} Batch(es) are still safely verified on the zkSync Blockchain:</p>
+									{history.map((batch, i) => (
+										<div key={i} className="bg-white p-2 rounded border border-emerald-100 flex justify-between items-center">
+											<span className="font-mono text-xs text-slate-700">Batch ID: {formatAddress(batch.merkleRoot)}</span>
+											<span className="text-xs text-slate-500">Block #{batch.blockNumber}</span>
+										</div>
+									))}
+									<p className="text-xs text-slate-500 mt-2">To restore student names, re-upload the original CSV for these batches.</p>
+								</div>
+							) : (
+								<p className="text-slate-500 text-sm">No records found matching your search.</p>
+							)}
 						</div>
 					) : (
 						<div className="space-y-4">
