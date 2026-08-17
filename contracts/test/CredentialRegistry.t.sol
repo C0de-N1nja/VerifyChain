@@ -29,7 +29,7 @@ contract CredentialRegistryTest is Test {
 
     function test_RegisterBatchAsActiveIssuer() public {
         vm.prank(issuer);
-        registry.registerBatch(mockRoot, 0);
+        registry.registerBatch(mockRoot, 0, "");
 
         CredentialRegistry.BatchRecord memory batch = registry.getBatch(mockRoot);
         assertEq(batch.issuer, issuer);
@@ -39,12 +39,12 @@ contract CredentialRegistryTest is Test {
     function test_RevertWhen_RegisterBatchAsNonIssuer() public {
         vm.prank(address(0x999));
         vm.expectRevert(CredentialRegistry.CredentialRegistry__NotActivatedIssuer.selector);
-        registry.registerBatch(mockRoot, 0);
+        registry.registerBatch(mockRoot, 0, "");
     }
 
     function test_RevokeCredential() public {
         vm.prank(issuer);
-        registry.registerBatch(mockRoot, 0);
+        registry.registerBatch(mockRoot, 0, "");
 
         vm.prank(issuer);
         registry.revokeCredential(mockLeaf, mockRoot);
@@ -74,7 +74,7 @@ contract CredentialRegistryTest is Test {
         bytes32 root = _hashPair(h01, h23);
 
         vm.prank(issuer);
-        registry.registerBatch(root, 0);
+        registry.registerBatch(root, 0, "");
 
         bytes32[] memory proof = new bytes32[](2);
         proof[0] = leaf1;
@@ -95,7 +95,7 @@ contract CredentialRegistryTest is Test {
         bytes32 root = _hashPair(h01, h23);
 
         vm.prank(issuer);
-        registry.registerBatch(root, 0);
+        registry.registerBatch(root, 0, "");
 
         vm.prank(issuer);
         registry.revokeCredential(leaf0, root);
@@ -118,7 +118,7 @@ contract CredentialRegistryTest is Test {
         bytes32 root = keccak256(abi.encodePacked("expiring-batch"));
 
         vm.prank(issuer);
-        registry.registerBatch(root, block.timestamp + 1 days);
+        registry.registerBatch(root, block.timestamp + 1 days, "");
 
         vm.warp(block.timestamp + 2 days);
 
@@ -129,7 +129,7 @@ contract CredentialRegistryTest is Test {
 
     function test_RevertWhen_RevokeAsNonBatchOwner() public {
         vm.prank(issuer);
-        registry.registerBatch(mockRoot, 0);
+        registry.registerBatch(mockRoot, 0, "");
 
         address otherIssuer = address(0x6);
         vm.prank(member1);

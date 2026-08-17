@@ -23,6 +23,7 @@ contract CredentialRegistry {
         address issuer;
         uint256 expiryTimestamp;
         bool isRevoked;
+        string ipfsHash;
     }
 
     address public governanceBoard;
@@ -40,11 +41,12 @@ contract CredentialRegistry {
         _;
     }
 
-    function registerBatch(bytes32 _merkleRoot, uint256 _expiryTimestamp) public onlyActivatedIssuer {
+    function registerBatch(bytes32 _merkleRoot, uint256 _expiryTimestamp, string memory _ipfsHash) public onlyActivatedIssuer {
         batches[_merkleRoot] = BatchRecord({
             issuer: msg.sender,
             expiryTimestamp: _expiryTimestamp,
-            isRevoked: false
+            isRevoked: false,
+            ipfsHash: _ipfsHash
         });
 
         emit BatchRegistered(_merkleRoot, msg.sender, _expiryTimestamp);
@@ -71,6 +73,10 @@ contract CredentialRegistry {
 
     function getBatch(bytes32 _merkleRoot) public view returns (BatchRecord memory) {
         return batches[_merkleRoot];
+    }
+
+    function getIpfsHash(bytes32 _merkleRoot) public view returns (string memory) {
+        return batches[_merkleRoot].ipfsHash;
     }
 
     function isLeafRevoked(bytes32 _leafHash) public view returns (bool) {

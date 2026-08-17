@@ -52,7 +52,7 @@ contract Demo is Script {
         console2.logBytes32(root);
 
         vm.startBroadcast(ISSUER_PK);
-        registry.registerBatch(root, 0);
+        registry.registerBatch(root, 0, "");
         console2.log("Batch registered by issuer");
         vm.stopBroadcast();
 
