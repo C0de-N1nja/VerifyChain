@@ -3,17 +3,18 @@ const keccak256 = require('keccak256');
 const { ethers } = require('ethers');
 
 function hashCredential(credential) {
-    // Normalize address casing using checksum address
     const normalizedAddress = ethers.getAddress(credential.issuerAddress.trim());
     
-    // Include rollNumber in the hash to ensure absolute uniqueness
     const encoded = ethers.solidityPacked(
-        ['string', 'string', 'string', 'address'],
+        ['string', 'string', 'string', 'address', 'string', 'string', 'string'],
         [
             credential.studentName.trim(), 
             credential.degreeTitle.trim(), 
             credential.rollNumber.trim(), 
-            normalizedAddress
+            normalizedAddress,
+            credential.major ? credential.major.trim() : '', 
+            credential.honors ? credential.honors.trim() : '', 
+            credential.nationalId ? credential.nationalId.trim() : ''
         ]
     );
     return keccak256(encoded);
