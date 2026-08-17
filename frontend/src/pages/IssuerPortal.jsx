@@ -23,6 +23,13 @@ export default function IssuerPortal() {
 	const [rollNumber, setRollNumber] = useState("");
 	const [studentName, setStudentName] = useState("");
 	const [degreeTitle, setDegreeTitle] = useState("");
+	const [major, setMajor] = useState("");
+	const [minor, setMinor] = useState("");
+	const [honors, setHonors] = useState("");
+	const [nationalId, setNationalId] = useState("");
+	const [idType, setIdType] = useState("");
+	const [campus, setCampus] = useState("");
+	const [placeOfIssue, setPlaceOfIssue] = useState("");
 	const [department, setDepartment] = useState("");
 	const [email, setEmail] = useState("");
 	const [institution, setInstitution] = useState("");
@@ -51,11 +58,25 @@ export default function IssuerPortal() {
 
 	const [isDragging, setIsDragging] = useState(false);
 
+	// Remove the hardcoded object. Use this dynamic fetch instead.
 	useEffect(() => {
-		if (activeTab === "history" || activeTab === "revocation") {
-			fetchDashboardData();
-		}
-	}, [activeTab, status]);
+		const fetchInstitutionName = async () => {
+			if (address) {
+				try {
+					const res = await fetch(`${API_URL}/api/issuer/details?address=${address}`);
+					const data = await res.json();
+					if (data.institutionName) {
+						setInstitution(data.institutionName);
+					} else {
+						setInstitution("");
+					}
+				} catch (err) {
+					console.error("Failed to fetch institution details");
+				}
+			}
+		};
+		fetchInstitutionName();
+	}, [address]);
 
 	const fetchDashboardData = async () => {
 		setIsLoadingHistory(true);
@@ -77,6 +98,12 @@ export default function IssuerPortal() {
 		}
 	};
 
+	useEffect(() => {
+		if (activeTab === "history" || activeTab === "revocation") {
+			fetchDashboardData();
+		}
+	}, [activeTab, status]);
+
 	if (role.isLoading)
 		return <div className="text-center text-slate-500 py-20 text-sm font-medium">Checking issuer authorization...</div>;
 
@@ -93,22 +120,40 @@ export default function IssuerPortal() {
 
 	const handlePrepareBatch = async (e) => {
 		e.preventDefault();
+
+		// DATE VALIDATION LOGIC
+		const issueTimestamp = Math.floor(new Date(issueDate).getTime() / 1000);
+		const currentTimestamp = Math.floor(Date.now() / 1000);
+
+		if (issueTimestamp > currentTimestamp) {
+			setToast({ message: "Issue Date cannot be in the future.", type: "error" });
+			return;
+		}
+
+		let expiryTimestamp = 0;
+		if (role.tier === 2 && expiryDate) {
+			expiryTimestamp = Math.floor(new Date(expiryDate).getTime() / 1000);
+			if (expiryTimestamp <= issueTimestamp) {
+				setToast({ message: "Expiry Date must be strictly after the Issue Date.", type: "error" });
+				return;
+			}
+		}
+
 		setToast({ message: "Generating Merkle Tree...", type: "info" });
 
 		try {
-			const issueTimestamp = Math.floor(new Date(issueDate).getTime() / 1000);
-			let expiryTimestamp = 0;
-
-			if (role.tier === 2 && expiryDate) {
-				expiryTimestamp = Math.floor(new Date(expiryDate).getTime() / 1000);
-			}
-
 			const payload = {
 				credentials: [
 					{
 						rollNumber: rollNumber || 'N/A',
 						studentName,
 						degreeTitle,
+						major: major || 'N/A',
+						minor: minor || 'N/A',
+						honors: honors || 'N/A',
+						nationalId: nationalId || 'N/A',
+						campus: campus || 'N/A',
+						placeOfIssue: placeOfIssue || 'N/A',
 						department: department || "General",
 						issuerAddress: address,
 						email: email || undefined,
@@ -117,7 +162,7 @@ export default function IssuerPortal() {
 					},
 				],
 			};
-
+			
 			const response = await fetch(`${API_URL}/api/issuer/prepare-batch`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -254,6 +299,13 @@ export default function IssuerPortal() {
 		setRollNumber("");
 		setStudentName("");
 		setDegreeTitle("");
+		setMajor("");
+		setMinor("");
+		setHonors("");
+		setNationalId("");
+		setIdType("");
+		setCampus("");
+		setPlaceOfIssue("");
 		setDepartment("");
 		setEmail("");
 		setInstitution("");
@@ -376,87 +428,174 @@ export default function IssuerPortal() {
 							</div>
 
 							{issuanceMode === "single" ? (
-								                                <form onSubmit={handlePrepareBatch} className="space-y-6">
-                                    <div className="space-y-4">
-                                        <h3 className="text-sm font-semibold text-slate-800">
-                                            {role.tier === 2 ? "Candidate Details" : "Student Details"}
-                                        </h3>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <div className="space-y-1.5">
-                                                <label htmlFor="rollNumber" className="block text-sm font-medium text-slate-700">
-                                                    {role.tier === 2 ? "Registration ID" : "Roll Number"}
-                                                </label>
-                                                <input id="rollNumber" type="text" value={rollNumber} onChange={(e) => setRollNumber(e.target.value)} 
-                                                    placeholder={role.tier === 2 ? "e.g., SMIT-2024-001" : "e.g., G1F22UBSCS095"} required
-                                                    className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label htmlFor="studentName" className="block text-sm font-medium text-slate-700">
-                                                    {role.tier === 2 ? "Candidate Name" : "Student Name"}
-                                                </label>
-                                                <input id="studentName" type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)} required
-                                                    className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label htmlFor="email" className="block text-sm font-medium text-slate-700">Email Address</label>
-                                            <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="For PDF delivery"
-                                                className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                        </div>
-                                    </div>
+								<form onSubmit={handlePrepareBatch} className="space-y-6">
+									<div className="space-y-4">
+										<h3 className="text-sm font-semibold text-slate-800">
+											{role.tier === 2 ? "Candidate Details" : "Student Details"}
+										</h3>
+										<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+											<div className="space-y-1.5">
+												<label htmlFor="rollNumber" className="block text-sm font-medium text-slate-700">
+													{role.tier === 2 ? "Registration ID" : "Roll Number"}
+												</label>
+												<input id="rollNumber" type="text" value={rollNumber} onChange={(e) => setRollNumber(e.target.value)}
+													placeholder={role.tier === 2 ? "e.g., SMIT-2024-001" : "e.g., G1F22UBSCS095"} required
+													pattern="^[a-zA-Z0-9-]+$"
+													title="Only letters, numbers, and hyphens are allowed."
+													className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+											</div>
+											<div className="space-y-1.5">
+												<label htmlFor="studentName" className="block text-sm font-medium text-slate-700">
+													{role.tier === 2 ? "Candidate Name" : "Student Name"}
+												</label>
+												<input id="studentName" type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)} required
+													pattern="^[a-zA-Z\s]+$"
+													title="Only letters and spaces are allowed."
+													className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+											</div>
+										</div>
+										<div className="space-y-1.5">
+											<label htmlFor="email" className="block text-sm font-medium text-slate-700">Email Address</label>
+											<input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="For PDF delivery"
+												className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+										</div>
+									</div>
 
-                                    <div className="space-y-4 pt-4 border-t border-slate-100">
-                                        <h3 className="text-sm font-semibold text-slate-800">
-                                            {role.tier === 2 ? "Certification Details" : "Academic Details"}
-                                        </h3>
-                                        <div className="space-y-4">
-                                            <div className="space-y-1.5">
-                                                <label htmlFor="degreeTitle" className="block text-sm font-medium text-slate-700">
-                                                    {role.tier === 2 ? "Course / Certification Name" : "Degree Title"}
-                                                </label>
-                                                <input id="degreeTitle" type="text" value={degreeTitle} onChange={(e) => setDegreeTitle(e.target.value)} required
-                                                    placeholder={role.tier === 2 ? "e.g., Full Stack Web Development" : "e.g., BS Computer Science"}
-                                                    className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                            </div>
+									<div className="space-y-4 pt-4 border-t border-slate-100">
+										<h3 className="text-sm font-semibold text-slate-800">
+											{role.tier === 2 ? "Certification Details" : "Academic Details"}
+										</h3>
+										<div className="space-y-4">
+											<div className="space-y-1.5">
+												<label htmlFor="degreeTitle" className="block text-sm font-medium text-slate-700">
+													{role.tier === 2 ? "Course / Certification Name" : "Degree Title"}
+												</label>
+												<input id="degreeTitle" type="text" value={degreeTitle} onChange={(e) => setDegreeTitle(e.target.value)} required
+													placeholder={role.tier === 2 ? "e.g., Full Stack Web Development" : "e.g., Bachelor of Science"}
+													pattern="^[a-zA-Z\s.&-]+$"
+													title="Only letters, spaces, and basic punctuation (. & -) are allowed."
+													className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+											</div>
 
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <div className="space-y-1.5">
-                                                    <label htmlFor="institution" className="block text-sm font-medium text-slate-700">Institution Name</label>
-                                                    <input id="institution" type="text" value={institution} onChange={(e) => setInstitution(e.target.value)} required
-                                                        placeholder={role.tier === 2 ? "e.g., Saylani Mass IT Training" : "e.g., University of Central Punjab"}
-                                                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                                </div>
-                                                <div className="space-y-1.5">
-                                                    <label htmlFor="department" className="block text-sm font-medium text-slate-700">
-                                                        {role.tier === 2 ? "Batch / Track" : "Department"}
-                                                    </label>
-                                                    <input id="department" type="text" value={department} onChange={(e) => setDepartment(e.target.value)} 
-                                                        placeholder={role.tier === 2 ? "e.g., Batch 12" : "e.g., Faculty of Computing"} required
-                                                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                                </div>
-                                            </div>
+											{/* Major & Minor (Minor hidden for Bootcamps) */}
+											<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+												<div className="space-y-1.5">
+													<label htmlFor="major" className="block text-sm font-medium text-slate-700">
+														{role.tier === 2 ? "Specialization" : "Major (Field of Study)"}
+													</label>
+													<input id="major" type="text" value={major} onChange={(e) => setMajor(e.target.value)}
+														placeholder={role.tier === 2 ? "e.g., MERN Stack" : "e.g., Computer Science"}
+														pattern="^[a-zA-Z\s.&-]+$"
+														title="Only letters, spaces, and basic punctuation (. & -) are allowed."
+														className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+												</div>
 
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <div className="space-y-1.5">
-                                                    <label htmlFor="issueDate" className="block text-sm font-medium text-slate-700">Issue Date</label>
-                                                    <input id="issueDate" type="datetime-local" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required
-                                                        className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                                </div>
-                                                {role.tier === 2 && (
-                                                    <div className="space-y-1.5">
-                                                        <label htmlFor="expiryDate" className="block text-sm font-medium text-slate-700">Expiry Date & Time</label>
-                                                        <input id="expiryDate" type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required
-                                                            className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
+												{/* ONLY SHOW MINOR FOR UNIVERSITIES (Tier 1) */}
+												{role.tier === 1 && (
+													<div className="space-y-1.5">
+														<label htmlFor="minor" className="block text-sm font-medium text-slate-700">Minor (Optional)</label>
+														<input id="minor" type="text" value={minor} onChange={(e) => setMinor(e.target.value)} placeholder="e.g., Mathematics"
+															pattern="^[a-zA-Z\s.&-]+$"
+															title="Only letters, spaces, and basic punctuation (. & -) are allowed."
+															className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+													</div>
+												)}
+											</div>
 
-                                    <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600">
-                                        Review Credential
-                                    </button>
-                                </form>
+											{/* Honors & Campus - ONLY FOR ACADEMIC (Tier 1) */}
+											{role.tier === 1 && (
+												<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+													<div className="space-y-1.5">
+														<label htmlFor="honors" className="block text-sm font-medium text-slate-700">Honors / CGPA</label>
+														<input id="honors" type="text" value={honors} onChange={(e) => setHonors(e.target.value)} placeholder="e.g., 3.80 or First Division"
+															pattern="^([0-3]\.[0-9]{1,2}|4\.0{1,2}|[a-zA-Z\s]+)$"
+															title="Enter a valid CGPA (e.g., 3.50) or text like 'First Division'."
+															className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+													</div>
+													<div className="space-y-1.5">
+														<label htmlFor="campus" className="block text-sm font-medium text-slate-700">Campus</label>
+														<input id="campus" type="text" value={campus} onChange={(e) => setCampus(e.target.value)} placeholder="e.g., Main Campus"
+															pattern="^[a-zA-Z\s]+$"
+															title="Only letters and spaces are allowed."
+															className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+													</div>
+												</div>
+											)}
+
+											<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+												{/* INSTITUTION NAME AUTO-FILLED & LOCKED */}
+												<div className="space-y-1.5">
+													<label htmlFor="institution" className="block text-sm font-medium text-slate-700">Institution Name</label>
+													<input id="institution" type="text" value={institution} onChange={(e) => setInstitution(e.target.value)} required
+														placeholder="Enter institution name (locked after first batch)"
+														readOnly={!!institution}
+														className={`w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${institution ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-white text-slate-900"}`} />
+												</div>
+												<div className="space-y-1.5">
+													<label htmlFor="department" className="block text-sm font-medium text-slate-700">
+														{role.tier === 2 ? "Batch / Track" : "Department"}
+													</label>
+													<input id="department" type="text" value={department} onChange={(e) => setDepartment(e.target.value)}
+														placeholder={role.tier === 2 ? "e.g., Batch 12" : "e.g., Faculty of Computing"} required
+														pattern="^[a-zA-Z0-9\s.&-]+$"
+														title="Only letters, numbers, and basic punctuation are allowed."
+														className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+												</div>
+											</div>
+
+											{/* National ID (Global Standard) */}
+											<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+												<div className="space-y-1.5">
+													<label htmlFor="idType" className="block text-sm font-medium text-slate-700">ID Type</label>
+													<select id="idType" value={idType} onChange={(e) => setIdType(e.target.value)} required
+														className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+														<option value="" disabled>Select ID Type</option>
+														<option value="CNIC">Pakistan (CNIC)</option>
+														<option value="Aadhaar">India (Aadhaar)</option>
+														<option value="SSN">USA (SSN)</option>
+														<option value="Other">Other / Generic</option>
+													</select>
+												</div>
+												<div className="space-y-1.5 sm:col-span-2">
+													<label htmlFor="nationalId" className="block text-sm font-medium text-slate-700">National ID Number</label>
+													<input id="nationalId" type="text" value={nationalId} onChange={(e) => setNationalId(e.target.value)} required
+														placeholder={idType === 'CNIC' ? '35202-1234567-1' : idType === 'Aadhaar' ? '1234-5678-9012' : 'Enter ID Number'}
+														pattern={idType === 'CNIC' ? '^[0-9]{5}-[0-9]{7}-[0-9]$' : idType === 'Aadhaar' ? '^[0-9]{4}-[0-9]{4}-[0-9]{4}$' : '^[a-zA-Z0-9-]+$'}
+														title={idType === 'CNIC' ? 'Format: 35202-1234567-1' : 'Format depends on country'}
+														className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+												</div>
+											</div>
+
+											<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+												<div className="space-y-1.5">
+													<label htmlFor="issueDate" className="block text-sm font-medium text-slate-700">Issue Date</label>
+													<input id="issueDate" type="datetime-local" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required
+														className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+												</div>
+												{role.tier === 2 && (
+													<div className="space-y-1.5">
+														<label htmlFor="expiryDate" className="block text-sm font-medium text-slate-700">Expiry Date & Time</label>
+														<input id="expiryDate" type="datetime-local" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} required
+															className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+													</div>
+												)}
+											</div>
+
+											<div className="space-y-1.5">
+												<label htmlFor="placeOfIssue" className="block text-sm font-medium text-slate-700">Place of Issue</label>
+												<input id="placeOfIssue" type="text" value={placeOfIssue} onChange={(e) => setPlaceOfIssue(e.target.value)} required
+													placeholder="e.g., Lahore, Pakistan"
+													pattern="^[a-zA-Z\s,]+$"
+													title="Only letters, spaces, and commas are allowed."
+													className="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+											</div>
+										</div>
+									</div>
+
+									<button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600">
+										Review Credential
+									</button>
+								</form>
 							) : (
 								<div className="space-y-6">
 									<div className="flex justify-between items-center bg-indigo-50 p-4 rounded-lg border border-indigo-100">
