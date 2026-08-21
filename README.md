@@ -163,11 +163,13 @@ npm install
 Create `.env` in `/backend`:
 
 ```env
-PRIVATE_KEY=your_wallet_private_key
-ZKSYNC_RPC_URL=https://sepolia.era.zksync.dev
-CONTRACT_ADDRESS=your_deployed_contract_address
+MONGO_URI=mongodb://127.0.0.1:27017/verifychain
+ZKSYNC_SEPOLIA_RPC=https://sepolia.era.zksync.dev
+GOVERNANCE_BOARD_ADDRESS=0x833C48E232174F849201fc58642bfdb41265D51e
+CREDENTIAL_REGISTRY_ADDRESS=0x92fF1cB6177c6543E3ED358dcceBD7F7E9cBcBef
 EMAIL_USER=your_email
-EMAIL_PASS=your_email_password
+EMAIL_APP_PASSWORD=your_gmail_app_password
+FRONTEND_URL=http://localhost:5173
 ```
 
 > ⚠️ Never commit `.env` to GitHub. It is already in `.gitignore`.
