@@ -4,6 +4,8 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
+const { parse } = require('csv-parse/sync');
 const mongoose = require('mongoose');
 const { ethers } = require('ethers');
 
@@ -54,6 +56,8 @@ const Credential = mongoose.model('Credential', credentialSchema);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Increased limit for 1000+ record bulk uploads
 app.use(cors());
@@ -206,6 +210,68 @@ app.post('/api/issuer/prepare-batch', (req, res) => {
 
         for (let i = 0; i < formattedCredentials.length; i++) {
             const errs = validateCredentialData(formattedCredentials[i]);
+            if (errs.length > 0) {
+                return res.status(400).json({ error: `Validation failed for record ${i + 1}: ${errs.join(' ')}` });
+            }
+        }
+
+        const { tree, leaves, root } = buildMerkleTree(formattedCredentials);
+
+        const prepared = formattedCredentials.map((credential, i) => ({
+            credential,
+            leaf: '0x' + leaves[i].toString('hex'),
+            proof: tree.getHexProof(leaves[i])
+        }));
+
+        res.json({ merkleRoot: root, credentials: prepared });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/issuer/prepare-batch-csv', upload.any(), async (req, res) => {
+    try {
+        let rawRecords = null;
+        const file = req.files && req.files.length > 0 ? req.files[0] : null;
+
+        if (file) {
+            // Multipart upload: parse the CSV text (strip Excel BOM if present)
+            const csvText = file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+            rawRecords = parse(csvText, { columns: true, skip_empty_lines: true, trim: true });
+        } else if (Array.isArray(req.body?.credentials) && req.body.credentials.length > 0) {
+            // Fallback: frontend already parsed the CSV and sent JSON
+            rawRecords = req.body.credentials;
+        } else {
+            return res.status(400).json({ error: 'CSV file is required' });
+        }
+
+        if (rawRecords.length === 0) {
+            return res.status(400).json({ error: 'CSV file contains no records' });
+        }
+
+        const formattedCredentials = rawRecords.map(c => ({
+            rollNumber: c.rollNumber ? String(c.rollNumber).trim() : 'N/A',
+            studentName: c.studentName ? c.studentName.trim() : '',
+            degreeTitle: c.degreeTitle ? c.degreeTitle.trim() : '',
+            major: c.major ? c.major.trim() : 'N/A',
+            minor: c.minor ? c.minor.trim() : 'N/A',
+            honors: c.honors ? c.honors.trim() : 'N/A',
+            nationalId: c.nationalId ? c.nationalId.trim() : 'N/A',
+            campus: c.campus ? c.campus.trim() : 'Main Campus',
+            placeOfIssue: c.placeOfIssue ? c.placeOfIssue.trim() : 'N/A',
+            department: c.department ? c.department.trim() : 'General',
+            issuerAddress: c.issuerAddress ? ethers.getAddress(c.issuerAddress.trim()) : '',
+            email: c.email ? c.email.trim() : undefined,
+            expiryTimestamp: c.expiryTimestamp ? Number(c.expiryTimestamp) : 0,
+            institutionName: c.institutionName ? c.institutionName.trim() : ''
+        }));
+
+        for (let i = 0; i < formattedCredentials.length; i++) {
+            const c = formattedCredentials[i];
+            if (!c.studentName || !c.degreeTitle || !c.issuerAddress) {
+                return res.status(400).json({ error: `Record ${i + 1}: studentName, degreeTitle and issuerAddress are required` });
+            }
+            const errs = validateCredentialData(c);
             if (errs.length > 0) {
                 return res.status(400).json({ error: `Validation failed for record ${i + 1}: ${errs.join(' ')}` });
             }
