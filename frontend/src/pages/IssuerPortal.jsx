@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "../hooks/useWallet";
 import { useContract, getFreshContract } from "../hooks/useContract";
@@ -13,6 +13,7 @@ export default function IssuerPortal() {
 	const { address, role } = useWallet();
 	const navigate = useNavigate();
 	const { execute, status, error, reset } = useTransaction();
+	const isSubmittingRef = useRef(false);
 	const [toast, setToast] = useState({ message: "", type: "info" });
 
 	const [activeTab, setActiveTab] = useState("issue");
@@ -230,51 +231,55 @@ export default function IssuerPortal() {
 	};
 
 	const handleConfirmRegister = async () => {
-		if (!batchData) return;
+	if (!batchData) return;
+	if (isSubmittingRef.current) return;
+	isSubmittingRef.current = true;
 
-		try {
-			const expiryTimestamp = batchData.credentials[0]?.credential?.expiryTimestamp || 0;
-			const ipfsHash = batchData.ipfsHash || "";
-			const contract = await getFreshContract("credentialRegistry", true);
+	try {
+		const expiryTimestamp = batchData.credentials[0]?.credential?.expiryTimestamp || 0;
+		const ipfsHash = batchData.ipfsHash || "";
+		const contract = await getFreshContract("credentialRegistry", true);
 
-			await execute(() =>
-				contract.registerBatch(batchData.merkleRoot, expiryTimestamp)
-			);
+		await execute(() =>
+			contract.registerBatch(batchData.merkleRoot, expiryTimestamp)
+		);
 
-			setToast({ message: "Credential registered. Generating certificates...", type: "info" });
+		setToast({ message: "Credential registered. Generating certificates...", type: "info" });
 
-			const response = await fetch(`${API_URL}/api/issuer/confirm-batch`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					merkleRoot: batchData.merkleRoot,
-					credentials: batchData.credentials,
-				}),
-			});
+		const response = await fetch(`${API_URL}/api/issuer/confirm-batch`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				merkleRoot: batchData.merkleRoot,
+				credentials: batchData.credentials,
+			}),
+		});
 
-			if (!response.ok) {
-				const text = await response.text();
-				let msg = `Server returned ${response.status}`;
-				try {
-					const errData = JSON.parse(text);
-					msg = errData.error || msg;
-				} catch (e) {
-				}
-				throw new Error(msg);
+		if (!response.ok) {
+			const text = await response.text();
+			let msg = `Server returned ${response.status}`;
+			try {
+				const errData = JSON.parse(text);
+				msg = errData.error || msg;
+			} catch (e) {
 			}
-
-			const data = await response.json();
-
-			setIssueResults(data);
-			setView("success");
-			setToast({ message: "Credential successfully issued.", type: "success" });
-		} catch (err) {
-			setToast({
-				message: parseError(err) || "Issuance failed.",
-				type: "error",
-			});
+			throw new Error(msg);
 		}
-	};
+
+		const data = await response.json();
+
+		setIssueResults(data);
+		setView("success");
+		setToast({ message: "Credential successfully issued.", type: "success" });
+	} catch (err) {
+		setToast({
+			message: parseError(err) || "Issuance failed.",
+			type: "error",
+		});
+	} finally {
+		isSubmittingRef.current = false;
+	}
+};
 
 	const handleRevoke = async () => {
 		if (!revokeTarget || confirmText !== "CONFIRM") return;
@@ -653,7 +658,7 @@ export default function IssuerPortal() {
 							<div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
 								<p>Once confirmed, this credential will be permanently registered and cannot be altered.</p>
 							</div>
-							<button onClick={handleConfirmRegister} disabled={status === "pending"} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600">
+							<button onClick={handleConfirmRegister} disabled={status === "pending" || isSubmittingRef.current} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-3 rounded-lg text-sm transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-600">
 								{status === "pending" ? "Waiting for institutional approval..." : "Confirm & Issue Credential"}
 							</button>
 						</div>
