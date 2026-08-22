@@ -5,11 +5,16 @@ const mongoose = require('mongoose');
 const { generateCertificate } = require('./certificate.js');
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_APP_PASSWORD
-    }
+    },
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 20000
 });
 
 const MAX_ATTEMPTS = 5;
@@ -31,7 +36,6 @@ const emailQueueSchema = new mongoose.Schema({
 const EmailQueueItem = mongoose.model('EmailQueueItem', emailQueueSchema);
 
 async function sendCertificateEmail(item) {
-    // Generate PDF right before sending
     const pdfBytes = await generateCertificate(item.credential, item.merkleRoot, item.leaf, item.proof);
     
     const mailOptions = {
