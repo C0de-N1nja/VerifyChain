@@ -14,7 +14,7 @@ const { ethers } = require('ethers');
 
 const { credentialRegistry } = require('./blockchain.js');
 const { buildMerkleTree } = require('./merkle.js');
-const { startEmailQueueProcessor, EmailQueueItem } = require('./mailer.js');
+const { startEmailQueueProcessor, processEmailQueue, EmailQueueItem } = require('./mailer.js');
 
 // Fail fast if critical env vars are missing (prevents cryptic ethers errors at startup)
 const REQUIRED_ENV = [
@@ -390,8 +390,9 @@ app.post('/api/issuer/confirm-batch', async (req, res) => {
             }
         }
 
-        // Respond instantly. The background worker handles the PDFs and SMTP.
         res.json({ merkleRoot, issuer: batch.issuer, issued: results, zipDownloadUrl: null });
+
+        processEmailQueue().catch(err => console.error('Immediate email send failed:', err.message));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
